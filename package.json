@@ -60,7 +60,8 @@
     "open": "^11.0.0",
     "pg": "^8.20.0",
     "react": "^19.2.4",
-    "socket.io": "^4.8.3"
+    "socket.io": "^4.8.3",
+    "socket.io-client": "^4.8.3"
   },
   "devDependencies": {
     "@types/cors": "^2.8.19",

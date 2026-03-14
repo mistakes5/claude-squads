@@ -1,9 +1,9 @@
 /**
  * Squads Watcher — background daemon that:
- * 1. Subscribes to Supabase Realtime for the user's current room
- * 2. Joins a global lobby channel for online/offline detection
- * 3. Polls friends list and cross-references with global presence
- * 4. Subscribes to DM channels for accepted friends
+ * 1. Connects to the Express + Socket.io server
+ * 2. Joins the lobby for online/offline detection
+ * 3. Listens for DMs, invites, and room events via Socket.io
+ * 4. Polls friends list via REST API
  * 5. Writes state to ~/.squads/state.json (for the overlay)
  * 6. Sends macOS notifications for messages/pings/invites
  *
@@ -11,12 +11,11 @@
  * Run with mock data: SQUADS_MOCK=1 node dist/watcher.js
  */
 
-import { createClient } from "@supabase/supabase-js";
+import { io as ioClient, type Socket } from "socket.io-client";
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from "fs";
 import { join } from "path";
 import { homedir } from "os";
 import { execSync } from "child_process";
-import type { RealtimeChannel } from "@supabase/supabase-js";
 
 // Load env
 try {
@@ -86,6 +85,10 @@ function loadSettings() {
   try { return JSON.parse(readFileSync(SETTINGS_FILE, "utf-8")); } catch { return { current_room: null }; }
 }
 
+function getServerUrl(): string {
+  return process.env.SQUADS_SERVER_URL ?? "http://localhost:3000";
+}
+
 function writeState(state: State) {
   ensureDir();
   writeFileSync(STATE_FILE, JSON.stringify(state, null, 2));
@@ -100,6 +103,23 @@ function notify(title: string, message: string) {
       { stdio: "ignore" }
     );
   } catch {}
+}
+
+async function apiFetch(path: string, opts: RequestInit = {}): Promise<any> {
+  const token = loadToken();
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+  };
+  if (token) headers.Authorization = `Bearer ${token.access_token}`;
+
+  const res = await fetch(`${getServerUrl()}${path}`, {
+    ...opts,
+    headers: { ...headers, ...(opts.headers as Record<string, string> || {}) },
+  });
+  if (!res.ok) {
+    throw new Error(`API ${res.status}: ${await res.text()}`);
+  }
+  return res.json();
 }
 
 function getDmChannelId(userId1: string, userId2: string): string {
@@ -129,7 +149,7 @@ async function main() {
   const isMock = process.env.SQUADS_MOCK === "1";
 
   if (isMock) {
-    console.log("Running in MOCK mode — fake friends data, no Supabase.");
+    console.log("Running in MOCK mode — fake friends data, no server connection.");
     const mockUsername = "testpilot";
     const mockState: State = {
       room_name: "The Ship Crew",
@@ -158,7 +178,6 @@ async function main() {
     writeState(mockState);
     console.log(`Mock state written to ${STATE_FILE}`);
 
-    // Keep alive, re-write every 5s to keep overlay updated
     setInterval(() => {
       mockState.last_update = new Date().toISOString();
       writeState(mockState);
@@ -167,37 +186,20 @@ async function main() {
   }
 
   // ─── Real mode ───
-  const url = process.env.SUPABASE_URL;
-  const key = process.env.SUPABASE_ANON_KEY;
-  if (!url || !key) {
-    console.error("Missing SUPABASE_URL or SUPABASE_ANON_KEY");
-    process.exit(1);
-  }
-
   const token = loadToken();
   if (!token) {
     console.error("Not logged in. Run squads login first.");
     process.exit(1);
   }
 
-  const supabase = createClient(url, key, {
-    auth: { persistSession: false, autoRefreshToken: false },
-  });
-  await supabase.auth.setSession({
-    access_token: token.access_token,
-    refresh_token: token.refresh_token,
-  });
-
+  const serverUrl = getServerUrl();
   const username = token.user.github_username;
   const displayName = token.user.display_name ?? null;
   const avatarUrl = token.user.avatar_url ?? null;
   const userId = token.user.id;
 
   // ─── State ───
-  let currentChannel: RealtimeChannel | null = null;
-  let lobbyChannel: RealtimeChannel | null = null;
-  let inviteChannel: RealtimeChannel | null = null;
-  const dmChannels = new Map<string, RealtimeChannel>();
+  let socket: Socket | null = null;
   let friendsPollInterval: ReturnType<typeof setInterval> | null = null;
   let settingsPollInterval: ReturnType<typeof setInterval> | null = null;
 
@@ -209,7 +211,7 @@ async function main() {
   let friends: FriendState[] = [];
   const dmMessages = new Map<string, RecentMessage[]>();
   let pendingInvites: Invite[] = [];
-  const globalOnlineUsers = new Map<string, { github_username: string; avatar_url: string | null }>();
+  const globalOnlineUsers = new Map<string, { username: string }>();
 
   function updateState() {
     const dmObj: Record<string, RecentMessage[]> = {};
@@ -231,279 +233,180 @@ async function main() {
     });
   }
 
-  // ─── Global lobby presence ───
-  async function joinLobby() {
-    lobbyChannel = supabase.channel("presence:lobby", {
-      config: { presence: { key: userId } },
-    });
+  // ─── Connect Socket.io ───
+  socket = ioClient(serverUrl, {
+    auth: { token: token.access_token },
+    reconnection: true,
+    reconnectionDelay: 2000,
+    reconnectionAttempts: Infinity,
+  });
 
-    lobbyChannel.on("presence", { event: "sync" }, () => {
-      const state = lobbyChannel!.presenceState();
-      globalOnlineUsers.clear();
-      for (const presences of Object.values(state)) {
-        const p = (presences as any[])[0];
-        if (p?.github_username) {
-          globalOnlineUsers.set(p.user_id || p.github_username, {
-            github_username: p.github_username,
-            avatar_url: p.avatar_url,
-          });
-        }
-      }
-      // Update friends' online status
-      for (const f of friends) {
-        f.is_online = Array.from(globalOnlineUsers.values()).some(
-          u => u.github_username === f.github_username
-        );
-      }
-      updateState();
-    });
+  socket.on("connect", () => {
+    console.log("Connected to server via Socket.io");
+    // Rejoin room on reconnect
+    if (currentRoomSlug) {
+      socket!.emit("join-room", { slug: currentRoomSlug });
+    }
+  });
 
-    lobbyChannel.subscribe(async (status) => {
-      if (status === "SUBSCRIBED") {
-        await lobbyChannel!.track({
-          user_id: userId,
-          github_username: username,
-          avatar_url: token.user.avatar_url,
-          online_at: new Date().toISOString(),
-        });
-      }
+  socket.on("connect_error", (err) => {
+    console.error("Socket connection error:", err.message);
+  });
+
+  // ─── Lobby presence ───
+  socket.on("presence-update", ({ online }: { online: Array<{ id: string; username: string }> }) => {
+    globalOnlineUsers.clear();
+    for (const u of online) {
+      globalOnlineUsers.set(u.id, { username: u.username });
+    }
+    // Update friends' online status
+    for (const f of friends) {
+      f.is_online = Array.from(globalOnlineUsers.values()).some(
+        u => u.username === f.github_username
+      );
+    }
+    updateState();
+  });
+
+  // ─── DMs (arrive on personal user:<id> room) ───
+  socket.on("dm", ({ from, fromUsername, content, timestamp }: any) => {
+    const channelId = getDmChannelId(userId, from);
+    const msgs = dmMessages.get(channelId) || [];
+    msgs.push({
+      username: fromUsername,
+      content,
+      created_at: timestamp || new Date().toISOString(),
     });
-  }
+    if (msgs.length > 50) msgs.shift();
+    dmMessages.set(channelId, msgs);
+
+    if (fromUsername !== username) {
+      notify(`DM from ${fromUsername}`, content);
+    }
+    updateState();
+  });
+
+  // ─── Invites (arrive on personal user:<id> room) ───
+  socket.on("invite", ({ fromUsername, roomSlug, roomName, timestamp }: any) => {
+    pendingInvites.push({
+      from_username: fromUsername,
+      room_slug: roomSlug,
+      room_name: roomName,
+      timestamp: timestamp || new Date().toISOString(),
+    });
+    if (pendingInvites.length > 20) pendingInvites.shift();
+    notify("Squad Invite", `${fromUsername} invited you to ${roomName}`);
+    updateState();
+  });
+
+  // ─── Room events ───
+  socket.on("room-presence-sync", ({ slug, members }: { slug: string; members: any[] }) => {
+    if (slug !== currentRoomSlug) return;
+    onlineUsers = members
+      .map((m: any) => m.username)
+      .filter((n: string) => n && n !== username);
+    updateState();
+  });
+
+  socket.on("new-message", ({ github_username, content, created_at }: any) => {
+    recentMessages.push({
+      username: github_username,
+      content,
+      created_at: created_at || new Date().toISOString(),
+    });
+    if (recentMessages.length > 50) recentMessages.shift();
+
+    if (github_username !== username) {
+      unreadCount++;
+      notify(`${github_username} in ${currentRoomName}`, content);
+    }
+    updateState();
+  });
+
+  socket.on("ping", ({ from_username, message }: any) => {
+    notify("Squade Code", `${from_username}: ${message}`);
+  });
+
+  socket.on("emote", ({ username: emoteUser, emote }: any) => {
+    if (emoteUser !== username) {
+      notify("Squade Code", `${emoteUser} ${emote}`);
+    }
+  });
 
   // ─── Friends polling ───
   async function fetchFriends() {
     try {
-      const { data: sent } = await supabase
-        .from("friends")
-        .select("status, friend:users!friends_friend_id_fkey(id, github_username, avatar_url)")
-        .eq("user_id", userId);
-
-      const { data: received } = await supabase
-        .from("friends")
-        .select("status, friend:users!friends_user_id_fkey(id, github_username, avatar_url)")
-        .eq("friend_id", userId);
+      const data = await apiFetch("/api/friends") as any[];
 
       const seen = new Set<string>();
       const result: FriendState[] = [];
 
-      for (const row of (sent || [])) {
-        const f = row.friend as any;
-        if (!f || seen.has(f.id)) continue;
-        seen.add(f.id);
+      for (const row of data) {
+        if (seen.has(row.friend_id)) continue;
+        seen.add(row.friend_id);
         result.push({
-          id: f.id,
-          github_username: f.github_username,
-          avatar_url: f.avatar_url,
+          id: row.friend_id,
+          github_username: row.github_username,
+          avatar_url: row.avatar_url || null,
           status: row.status as "pending" | "accepted",
-          direction: "sent",
+          direction: row.direction === "outgoing" ? "sent" : "received",
           is_online: Array.from(globalOnlineUsers.values()).some(
-            u => u.github_username === f.github_username
-          ),
-        });
-      }
-
-      for (const row of (received || [])) {
-        const f = row.friend as any;
-        if (!f || seen.has(f.id)) continue;
-        seen.add(f.id);
-        result.push({
-          id: f.id,
-          github_username: f.github_username,
-          avatar_url: f.avatar_url,
-          status: row.status as "pending" | "accepted",
-          direction: "received",
-          is_online: Array.from(globalOnlineUsers.values()).some(
-            u => u.github_username === f.github_username
+            u => u.username === row.github_username
           ),
         });
       }
 
       friends = result;
-
-      // Subscribe to DM channels for accepted friends
-      const acceptedIds = new Set(
-        result.filter(f => f.status === "accepted").map(f => f.id)
-      );
-
-      // Subscribe new
-      for (const fid of acceptedIds) {
-        const chId = getDmChannelId(userId, fid);
-        if (!dmChannels.has(chId)) {
-          subscribeDmChannel(fid, chId);
-        }
-      }
-
-      // Unsubscribe removed
-      for (const [chId, ch] of dmChannels) {
-        const friendId = chId.replace("dm:", "").split(":").find(id => id !== userId);
-        if (friendId && !acceptedIds.has(friendId)) {
-          await ch.unsubscribe();
-          dmChannels.delete(chId);
-        }
-      }
-
       updateState();
     } catch (err: any) {
       console.error("Failed to fetch friends:", err.message);
     }
   }
 
-  // ─── DM channels ───
-  function subscribeDmChannel(friendId: string, channelId: string) {
-    const channel = supabase.channel(channelId);
-
-    channel.on("broadcast", { event: "dm" }, ({ payload }: any) => {
-      const msgs = dmMessages.get(channelId) || [];
-      msgs.push({
-        username: payload.username,
-        content: payload.content,
-        created_at: payload.created_at || new Date().toISOString(),
-      });
-      if (msgs.length > 50) msgs.shift();
-      dmMessages.set(channelId, msgs);
-
-      if (payload.username !== username) {
-        notify(`DM from ${payload.username}`, payload.content);
-      }
-      updateState();
-    });
-
-    channel.subscribe();
-    dmChannels.set(channelId, channel);
-  }
-
-  // ─── Squad invites ───
-  async function joinInviteChannel() {
-    inviteChannel = supabase.channel(`invites:${userId}`);
-
-    inviteChannel.on("broadcast", { event: "squad_invite" }, ({ payload }: any) => {
-      pendingInvites.push({
-        from_username: payload.from_username,
-        room_slug: payload.room_slug,
-        room_name: payload.room_name,
-        timestamp: new Date().toISOString(),
-      });
-      if (pendingInvites.length > 20) pendingInvites.shift();
-      notify("Squad Invite", `${payload.from_username} invited you to ${payload.room_name}`);
-      updateState();
-    });
-
-    await inviteChannel.subscribe();
-  }
-
   // ─── Room watching ───
   async function watchRoom(slug: string) {
-    if (currentChannel) {
-      await currentChannel.unsubscribe();
+    // Leave current room if any
+    if (currentRoomSlug && socket) {
+      socket.emit("leave-room", { slug: currentRoomSlug });
     }
 
-    const { data: room } = await supabase
-      .from("rooms")
-      .select("id, name, slug")
-      .eq("slug", slug)
-      .single();
-
-    if (!room) {
-      console.error(`Room "${slug}" not found`);
+    // Look up room details via REST
+    try {
+      const room = await apiFetch(`/api/rooms/${encodeURIComponent(slug)}`);
+      currentRoomSlug = room.slug;
+      currentRoomName = room.name;
+    } catch (err: any) {
+      console.error(`Room "${slug}" not found:`, err.message);
       return;
     }
 
-    currentRoomSlug = room.slug;
-    currentRoomName = room.name;
     unreadCount = 0;
+    recentMessages = [];
 
-    const channel = supabase.channel(`room:${slug}`, {
-      config: { presence: { key: userId } },
-    });
+    // Join room via Socket.io
+    if (socket) {
+      socket.emit("join-room", { slug });
+    }
 
-    channel.on("presence", { event: "sync" }, () => {
-      const state = channel.presenceState();
-      onlineUsers = Object.values(state)
-        .flatMap((p: any) => p)
-        .map((p: any) => p.github_username)
-        .filter((n: string) => n && n !== username);
-      updateState();
-    });
-
-    channel.on("presence", { event: "join" }, ({ newPresences }) => {
-      for (const p of newPresences as any[]) {
-        if (p.github_username && p.github_username !== username) {
-          notify("Squade Code", `${p.github_username} joined ${currentRoomName}`);
-        }
-      }
-    });
-
-    channel.on("broadcast", { event: "new_message" }, ({ payload }: any) => {
-      recentMessages.push({
-        username: payload.username,
-        content: payload.content,
-        created_at: payload.created_at || new Date().toISOString(),
-      });
-      if (recentMessages.length > 50) recentMessages.shift();
-
-      if (payload.username !== username) {
-        unreadCount++;
-        notify(`${payload.username} in ${currentRoomName}`, payload.content);
-      }
-      updateState();
-    });
-
-    channel.on("broadcast", { event: "ping" }, ({ payload }: any) => {
-      if (payload.to_username === username) {
-        notify("Squade Code", `${payload.from_username}: ${payload.message}`);
-      }
-    });
-
-    channel.on("broadcast", { event: "emote" }, ({ payload }: any) => {
-      if (payload.github_username !== username) {
-        notify("Squade Code", `${payload.github_username} ${payload.emote}`);
-      }
-    });
-
-    channel.subscribe(async (status) => {
-      if (status === "SUBSCRIBED") {
-        await channel.track({
-          github_username: username,
-          avatar_url: token.user.avatar_url,
-          status: "online",
-          current_file: null,
-          online_at: new Date().toISOString(),
-        });
-      }
-    });
-
-    currentChannel = channel;
     updateState();
     console.log(`Watching room: ${currentRoomName} (${currentRoomSlug})`);
   }
 
   // ─── Cleanup ───
-  async function cleanup() {
+  function cleanup() {
     console.log("Cleaning up...");
-    if (lobbyChannel) {
-      await lobbyChannel.untrack().catch(() => {});
-      await lobbyChannel.unsubscribe().catch(() => {});
-    }
-    if (inviteChannel) {
-      await inviteChannel.unsubscribe().catch(() => {});
-    }
-    for (const [, ch] of dmChannels) {
-      await ch.unsubscribe().catch(() => {});
-    }
-    dmChannels.clear();
-    if (currentChannel) {
-      await currentChannel.unsubscribe().catch(() => {});
+    if (socket) {
+      socket.disconnect();
+      socket = null;
     }
     if (friendsPollInterval) clearInterval(friendsPollInterval);
     if (settingsPollInterval) clearInterval(settingsPollInterval);
   }
 
-  process.on("SIGINT", async () => { await cleanup(); process.exit(0); });
-  process.on("SIGTERM", async () => { await cleanup(); process.exit(0); });
+  process.on("SIGINT", () => { cleanup(); process.exit(0); });
+  process.on("SIGTERM", () => { cleanup(); process.exit(0); });
 
   // ─── Start everything ───
-  await joinLobby();
-  await joinInviteChannel();
   await fetchFriends();
 
   // Check settings for current room, or watch first joined room
@@ -511,15 +414,13 @@ async function main() {
   let roomToWatch = settings.current_room;
 
   if (!roomToWatch) {
-    const { data: membership } = await supabase
-      .from("room_members")
-      .select("rooms(slug)")
-      .eq("user_id", userId)
-      .limit(1)
-      .single();
-
-    if (membership) {
-      roomToWatch = (membership.rooms as any)?.slug;
+    try {
+      const myRooms = await apiFetch("/api/rooms/mine") as any[];
+      if (myRooms.length > 0) {
+        roomToWatch = myRooms[0].slug;
+      }
+    } catch (err: any) {
+      console.error("Failed to fetch rooms:", err.message);
     }
   }
 

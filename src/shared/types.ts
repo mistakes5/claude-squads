@@ -58,8 +58,7 @@ export interface PresenceState {
 }
 
 export interface SquadsConfig {
-  supabaseUrl: string;
-  supabaseAnonKey: string;
+  serverUrl: string;
 }
 
 export interface StoredToken {

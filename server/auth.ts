@@ -52,32 +52,60 @@ router.get("/auth/github/callback", async (req, res) => {
       id: number;
       login: string;
       avatar_url: string;
+      name: string | null;
     };
 
-    // Upsert user in database
-    const result = await query(
-      `INSERT INTO users (github_id, github_username, avatar_url)
-       VALUES ($1, $2, $3)
-       ON CONFLICT (github_id)
-       DO UPDATE SET github_username = EXCLUDED.github_username, avatar_url = EXCLUDED.avatar_url
-       RETURNING id, github_username`,
-      [String(ghUser.id), ghUser.login, ghUser.avatar_url],
-    );
-
-    const user = result.rows[0];
+    // Try to upsert in DB, but don't fail if DB is unavailable
+    let userId = String(ghUser.id);
+    try {
+      const result = await query(
+        `INSERT INTO users (github_id, github_username, avatar_url)
+         VALUES ($1, $2, $3)
+         ON CONFLICT (github_id)
+         DO UPDATE SET github_username = EXCLUDED.github_username, avatar_url = EXCLUDED.avatar_url
+         RETURNING id, github_username`,
+        [String(ghUser.id), ghUser.login, ghUser.avatar_url],
+      );
+      userId = result.rows[0].id;
+    } catch (dbErr) {
+      // DB not available — use GitHub ID as user ID
+      console.warn("DB unavailable, using GitHub ID as user ID:", (dbErr as Error).message);
+    }
 
     // Generate JWT
     const token = jwt.sign(
-      { sub: user.id, username: user.github_username },
+      { sub: userId, username: ghUser.login },
       process.env.JWT_SECRET!,
       { expiresIn: "7d" },
     );
 
-    // Redirect to Electron app callback
+    // Redirect to Electron app's local callback server
     res.redirect(`http://localhost:54321/callback?token=${token}`);
   } catch (err) {
     console.error("GitHub OAuth error:", err);
     res.status(500).json({ error: "Authentication failed" });
+  }
+});
+
+// ─── User profile endpoint (no DB required) ───
+router.get("/api/users/me", (req, res) => {
+  const authHeader = req.headers.authorization;
+  if (!authHeader?.startsWith("Bearer ")) {
+    res.status(401).json({ error: "Not authenticated" });
+    return;
+  }
+  try {
+    const payload = jwt.verify(authHeader.slice(7), process.env.JWT_SECRET!) as {
+      sub: string;
+      username: string;
+    };
+    res.json({
+      id: payload.sub,
+      github_username: payload.username,
+      avatar_url: `https://github.com/${payload.username}.png`,
+    });
+  } catch {
+    res.status(401).json({ error: "Invalid token" });
   }
 });
 

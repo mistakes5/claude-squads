@@ -78,4 +78,30 @@ router.post("/api/rooms/:slug/messages", async (req, res) => {
   }
 });
 
+// Send a DM to a friend (ephemeral — broadcast only, not persisted)
+router.post("/api/messages", async (req, res) => {
+  const { friend_id, content } = req.body;
+  if (!friend_id || !content) {
+    res.status(400).json({ error: "friend_id and content are required" });
+    return;
+  }
+
+  try {
+    // Emit DM via Socket.io to the friend's personal room
+    if (io) {
+      io.to(`user:${friend_id}`).emit("dm", {
+        from: req.user!.id,
+        fromUsername: req.user!.username,
+        content,
+        timestamp: new Date().toISOString(),
+      });
+    }
+
+    res.status(201).json({ sent: true });
+  } catch (err) {
+    console.error("Error sending DM:", err);
+    res.status(500).json({ error: "Failed to send DM" });
+  }
+});
+
 export default router;

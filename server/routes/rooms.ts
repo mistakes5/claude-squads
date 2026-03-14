@@ -1,6 +1,13 @@
 import { Router } from "express";
+import type { Server as SocketServer } from "socket.io";
 import { requireAuth } from "../middleware.js";
 import { query } from "../db.js";
+
+let io: SocketServer;
+
+export function setRoomsSocketServer(socketServer: SocketServer) {
+  io = socketServer;
+}
 
 const router = Router();
 router.use(requireAuth);
@@ -117,6 +124,61 @@ router.delete("/api/rooms/:slug/leave", async (req, res) => {
   } catch (err) {
     console.error("Error leaving room:", err);
     res.status(500).json({ error: "Failed to leave room" });
+  }
+});
+
+// Get room by slug
+router.get("/api/rooms/:slug", async (req, res) => {
+  const { slug } = req.params;
+  try {
+    const result = await query(
+      `SELECT r.*, u.github_username AS created_by_username
+       FROM rooms r
+       LEFT JOIN users u ON r.created_by = u.id
+       WHERE r.slug = $1`,
+      [slug],
+    );
+    if (result.rows.length === 0) {
+      res.status(404).json({ error: "Room not found" });
+      return;
+    }
+    res.json(result.rows[0]);
+  } catch (err) {
+    console.error("Error fetching room:", err);
+    res.status(500).json({ error: "Failed to fetch room" });
+  }
+});
+
+// Invite a friend to a room
+router.post("/api/rooms/:slug/invite", async (req, res) => {
+  const { slug } = req.params;
+  const { friend_id } = req.body;
+  if (!friend_id) {
+    res.status(400).json({ error: "friend_id is required" });
+    return;
+  }
+
+  try {
+    const room = await query(`SELECT id, name FROM rooms WHERE slug = $1`, [slug]);
+    if (room.rows.length === 0) {
+      res.status(404).json({ error: "Room not found" });
+      return;
+    }
+
+    if (io) {
+      io.to(`user:${friend_id}`).emit("invite", {
+        from: req.user!.id,
+        fromUsername: req.user!.username,
+        roomSlug: slug,
+        roomName: room.rows[0].name,
+        timestamp: new Date().toISOString(),
+      });
+    }
+
+    res.json({ invited: true, slug });
+  } catch (err) {
+    console.error("Error inviting to room:", err);
+    res.status(500).json({ error: "Failed to invite" });
   }
 });
 

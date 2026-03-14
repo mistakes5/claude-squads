@@ -21,13 +21,16 @@ import {
   watchFile, unwatchFile, mkdirSync,
 } from "fs";
 import { homedir } from "os";
-import { fork, ChildProcess } from "child_process";
+import { ChildProcess, spawn } from "child_process";
 
-// Load env vars for Supabase access (needed for OAuth, friends, DMs)
+// Load env vars — try project root first, then fall back to packaged app location
 try {
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   const dotenv = require("dotenv");
+  // In dev: __dirname = squads/dist/overlay → ../../.env = squads/.env
+  // In packaged: app.asar won't have .env, so also check ~/.squads/.env
   dotenv.config({ path: join(__dirname, "../../.env") });
+  dotenv.config({ path: join(homedir(), ".squads", ".env") });
 } catch {}
 
 const SQUADS_DIR = join(homedir(), ".squads");
@@ -52,6 +55,7 @@ let watcherProcess: ChildProcess | null = null;
 let watcherShouldRestart = true;
 
 function spawnWatcher() {
+  // Resolve watcher script — works in both dev (dist/) and packaged (app.asar)
   const watcherPath = join(__dirname, "../watcher.js");
   if (!existsSync(watcherPath)) {
     console.warn("Watcher not found at", watcherPath);
@@ -64,24 +68,25 @@ function spawnWatcher() {
   }
   if (watcherProcess) {
     watcherProcess.kill("SIGTERM");
-    // Wait briefly for old process to exit before spawning new one
     setTimeout(() => {
       watcherProcess = null;
       spawnWatcher();
     }, 500);
     return;
   }
-  watcherProcess = fork(watcherPath, [], {
-    env: { ...process.env },
-    stdio: "pipe",
+  // Use spawn with Electron's own executable as the Node runtime.
+  // In packaged apps, fork() fails because there's no standalone node binary.
+  // process.execPath points to the Electron binary which can run JS with --require.
+  const child = spawn(process.execPath, [watcherPath], {
+    env: { ...process.env, ELECTRON_RUN_AS_NODE: "1" },
+    stdio: ["ignore", "pipe", "pipe"],
   });
-  watcherProcess.stdout?.on("data", (d: Buffer) => console.log(`[watcher] ${d.toString().trim()}`));
-  watcherProcess.stderr?.on("data", (d: Buffer) => console.error(`[watcher] ${d.toString().trim()}`));
-  watcherProcess.on("exit", (code) => {
+  watcherProcess = child as unknown as ChildProcess;
+  child.stdout?.on("data", (d: Buffer) => console.log(`[watcher] ${d.toString().trim()}`));
+  child.stderr?.on("data", (d: Buffer) => console.error(`[watcher] ${d.toString().trim()}`));
+  child.on("exit", (code) => {
     console.log(`Watcher exited with code ${code}`);
     watcherProcess = null;
-    // code 1 = "not logged in" — don't restart, wait for login
-    // Only auto-restart on unexpected crashes (code > 1)
     if (watcherShouldRestart && code !== null && code > 1) {
       setTimeout(spawnWatcher, 3000);
     }
@@ -146,33 +151,36 @@ function sendState() {
   mainWindow.webContents.send("state-update", readState());
 }
 
-// Lazy-loaded Supabase client for IPC handlers
-let supabaseClient: any = null;
+// ─── API helper for Express server ───
+function getServerUrl(): string {
+  return process.env.SQUADS_SERVER_URL ?? "http://localhost:3000";
+}
 
-async function getSupabase() {
-  if (supabaseClient) return supabaseClient;
-  const url = process.env.SUPABASE_URL;
-  const key = process.env.SUPABASE_ANON_KEY;
-  if (!url || !key) throw new Error("Missing Supabase env vars");
-
-  const { createClient } = await import("@supabase/supabase-js");
-  supabaseClient = createClient(url, key, {
-    auth: { persistSession: false, autoRefreshToken: false },
-  });
-
-  // Set session from stored token
-  const tokenPath = join(SQUADS_DIR, "token.json");
-  if (existsSync(tokenPath)) {
-    try {
-      const token = JSON.parse(readFileSync(tokenPath, "utf-8"));
-      await supabaseClient.auth.setSession({
-        access_token: token.access_token,
-        refresh_token: token.refresh_token,
-      });
-    } catch {}
+function getAuthHeaders(): Record<string, string> {
+  if (!existsSync(TOKEN_FILE)) return {};
+  try {
+    const token = JSON.parse(readFileSync(TOKEN_FILE, "utf-8"));
+    return { Authorization: `Bearer ${token.access_token}` };
+  } catch {
+    return {};
   }
+}
 
-  return supabaseClient;
+async function apiFetch(path: string, opts: RequestInit = {}): Promise<any> {
+  const url = `${getServerUrl()}${path}`;
+  const res = await fetch(url, {
+    ...opts,
+    headers: {
+      "Content-Type": "application/json",
+      ...getAuthHeaders(),
+      ...(opts.headers || {}),
+    },
+  });
+  if (!res.ok) {
+    const body = await res.text();
+    throw new Error(`API ${res.status}: ${body}`);
+  }
+  return res.json();
 }
 
 // ─── Single instance lock ───
@@ -231,7 +239,6 @@ app.whenReady().then(() => {
     try {
       const authModule = await import("../shared/auth.js");
       const user = await authModule.login();
-      supabaseClient = null; // Reset client so it picks up new token
       // Restart watcher to pick up new auth
       watcherShouldRestart = true;
       spawnWatcher();
@@ -247,7 +254,6 @@ app.whenReady().then(() => {
     try {
       const authModule = await import("../shared/auth.js");
       authModule.logout();
-      supabaseClient = null;
       killWatcher();
       // Write empty state so overlay clears
       if (!existsSync(SQUADS_DIR)) mkdirSync(SQUADS_DIR, { recursive: true });
@@ -267,22 +273,9 @@ app.whenReady().then(() => {
   // ─── IPC: Add friend ───
   ipcMain.handle("add-friend", async (_e, githubUsername: string) => {
     try {
-      const sb = await getSupabase();
-      // Find user by username
-      const { data: friendUser } = await sb
-        .from("users")
-        .select("id")
-        .eq("github_username", githubUsername)
-        .single();
-      if (!friendUser) return { success: false, error: "User not found" };
-
-      const tokenPath = join(SQUADS_DIR, "token.json");
-      const token = JSON.parse(readFileSync(tokenPath, "utf-8"));
-
-      await sb.from("friends").upsert({
-        user_id: token.user.id,
-        friend_id: friendUser.id,
-        status: "pending",
+      await apiFetch("/api/friends", {
+        method: "POST",
+        body: JSON.stringify({ github_username: githubUsername }),
       });
       return { success: true };
     } catch (err: any) {
@@ -293,28 +286,8 @@ app.whenReady().then(() => {
   // ─── IPC: Accept friend ───
   ipcMain.handle("accept-friend", async (_e, githubUsername: string) => {
     try {
-      const sb = await getSupabase();
-      const { data: friendUser } = await sb
-        .from("users")
-        .select("id")
-        .eq("github_username", githubUsername)
-        .single();
-      if (!friendUser) return { success: false, error: "User not found" };
-
-      const tokenPath = join(SQUADS_DIR, "token.json");
-      const token = JSON.parse(readFileSync(tokenPath, "utf-8"));
-
-      // Update their request to accepted
-      await sb.from("friends")
-        .update({ status: "accepted" })
-        .eq("user_id", friendUser.id)
-        .eq("friend_id", token.user.id);
-
-      // Create reverse friendship
-      await sb.from("friends").upsert({
-        user_id: token.user.id,
-        friend_id: friendUser.id,
-        status: "accepted",
+      await apiFetch(`/api/friends/${encodeURIComponent(githubUsername)}/accept`, {
+        method: "POST",
       });
       return { success: true };
     } catch (err: any) {
@@ -325,24 +298,10 @@ app.whenReady().then(() => {
   // ─── IPC: Send DM ───
   ipcMain.handle("send-dm", async (_e, friendId: string, content: string) => {
     try {
-      const sb = await getSupabase();
-      const tokenPath = join(SQUADS_DIR, "token.json");
-      const token = JSON.parse(readFileSync(tokenPath, "utf-8"));
-      const sorted = [token.user.id, friendId].sort();
-      const channelId = `dm:${sorted.join(":")}`;
-
-      const channel = sb.channel(channelId);
-      await channel.subscribe();
-      await channel.send({
-        type: "broadcast",
-        event: "dm",
-        payload: {
-          username: token.user.github_username,
-          content,
-          created_at: new Date().toISOString(),
-        },
+      await apiFetch("/api/messages", {
+        method: "POST",
+        body: JSON.stringify({ friend_id: friendId, content }),
       });
-      await channel.unsubscribe();
       return { success: true };
     } catch (err: any) {
       return { success: false, error: err.message };
@@ -352,29 +311,14 @@ app.whenReady().then(() => {
   // ─── IPC: Invite to squad ───
   ipcMain.handle("invite-to-squad", async (_e, friendId: string) => {
     try {
-      const sb = await getSupabase();
-      const tokenPath = join(SQUADS_DIR, "token.json");
-      const token = JSON.parse(readFileSync(tokenPath, "utf-8"));
       const settings = readSettings();
       const roomSlug = settings.current_room;
       if (!roomSlug) return { success: false, error: "Not in a room" };
 
-      // Get room name
-      const { data: room } = await sb.from("rooms").select("name").eq("slug", roomSlug).single();
-      const roomName = room?.name || roomSlug;
-
-      const channel = sb.channel(`invites:${friendId}`);
-      await channel.subscribe();
-      await channel.send({
-        type: "broadcast",
-        event: "squad_invite",
-        payload: {
-          from_username: token.user.github_username,
-          room_slug: roomSlug,
-          room_name: roomName,
-        },
+      await apiFetch(`/api/rooms/${encodeURIComponent(roomSlug)}/invite`, {
+        method: "POST",
+        body: JSON.stringify({ friend_id: friendId }),
       });
-      await channel.unsubscribe();
       return { success: true };
     } catch (err: any) {
       return { success: false, error: err.message };
@@ -384,16 +328,8 @@ app.whenReady().then(() => {
   // ─── IPC: Accept invite (join room) ───
   ipcMain.handle("accept-invite", async (_e, roomSlug: string) => {
     try {
-      const sb = await getSupabase();
-      const tokenPath = join(SQUADS_DIR, "token.json");
-      const token = JSON.parse(readFileSync(tokenPath, "utf-8"));
-
-      const { data: room } = await sb.from("rooms").select("id").eq("slug", roomSlug).single();
-      if (!room) return { success: false, error: "Room not found" };
-
-      await sb.from("room_members").upsert({
-        room_id: room.id,
-        user_id: token.user.id,
+      await apiFetch(`/api/rooms/${encodeURIComponent(roomSlug)}/join`, {
+        method: "POST",
       });
 
       // Update current room setting

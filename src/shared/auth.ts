@@ -1,38 +1,32 @@
 import { createServer } from "http";
-import { getSupabase, resetClient } from "./supabase.js";
 import { saveToken, clearToken } from "./config.js";
 import type { StoredToken } from "./types.js";
 
 const CALLBACK_PORT = 54321;
-const CALLBACK_URL = `http://localhost:${CALLBACK_PORT}/callback`;
 
 // Track the active callback server so we can tear it down
 let activeServer: ReturnType<typeof createServer> | null = null;
 
 /**
- * Opens the browser for GitHub OAuth and waits for the callback.
- * Returns the authenticated user info.
+ * Get the Squade server URL from env, with fallback.
+ */
+function getServerUrl(): string {
+  return process.env.SQUADS_SERVER_URL ?? "http://localhost:3000";
+}
+
+/**
+ * Opens the browser for GitHub OAuth via our Express server
+ * and waits for the JWT callback.
  */
 export async function login(): Promise<StoredToken["user"]> {
-  const supabase = getSupabase();
+  const serverUrl = getServerUrl();
+  const authUrl = `${serverUrl}/auth/github`;
 
-  const { data, error } = await supabase.auth.signInWithOAuth({
-    provider: "github",
-    options: {
-      redirectTo: CALLBACK_URL,
-      skipBrowserRedirect: true,
-    },
-  });
-
-  if (error || !data.url) {
-    throw new Error(`OAuth init failed: ${error?.message ?? "no URL"}`);
-  }
-
-  // Open browser
+  // Open browser to our server's GitHub OAuth endpoint
   const openModule = await import("open");
-  await openModule.default(data.url);
+  await openModule.default(authUrl);
 
-  // Wait for callback
+  // Wait for callback with JWT
   const tokenData = await waitForCallback();
   return tokenData.user;
 }
@@ -65,55 +59,56 @@ function waitForCallback(): Promise<StoredToken> {
         return;
       }
 
-      const code = url.searchParams.get("code");
-      if (!code) {
+      const jwt = url.searchParams.get("token");
+      if (!jwt) {
         res.writeHead(400);
-        res.end("Missing code parameter");
+        res.end("Missing token parameter");
         return;
       }
 
       try {
-        const supabase = getSupabase();
-        const { data, error } = await supabase.auth.exchangeCodeForSession(code);
-
-        if (error || !data.session) {
-          throw new Error(error?.message ?? "Failed to exchange code");
-        }
-
-        const githubUsername =
-          data.user.user_metadata?.user_name ??
-          data.user.user_metadata?.preferred_username ??
-          "unknown";
-        const displayName =
-          data.user.user_metadata?.name ??
-          data.user.user_metadata?.full_name ??
-          null;
-        const avatarUrl = data.user.user_metadata?.avatar_url ?? null;
-
-        await supabase.from("users").upsert(
-          {
-            id: data.user.id,
-            github_id: data.user.user_metadata?.provider_id ?? data.user.id,
-            github_username: githubUsername,
-            avatar_url: avatarUrl,
-          },
-          { onConflict: "github_id" }
+        // Decode the JWT payload (no verification needed — we trust our own server)
+        const payload = JSON.parse(
+          Buffer.from(jwt.split(".")[1], "base64").toString()
         );
 
+        // Fetch full user profile from our server
+        const serverUrl = getServerUrl();
+        const userRes = await fetch(`${serverUrl}/api/users/me`, {
+          headers: { Authorization: `Bearer ${jwt}` },
+        });
+
+        let username = payload.username || "unknown";
+        let avatarUrl: string | null = null;
+        let displayName: string | null = null;
+
+        if (userRes.ok) {
+          const userData = (await userRes.json()) as {
+            github_username?: string;
+            avatar_url?: string;
+            display_name?: string;
+          };
+          username = userData.github_username || username;
+          avatarUrl = userData.avatar_url || null;
+          displayName = userData.display_name || null;
+        } else {
+          // Fallback: use GitHub API for avatar
+          avatarUrl = `https://github.com/${username}.png`;
+        }
+
         const token: StoredToken = {
-          access_token: data.session.access_token,
-          refresh_token: data.session.refresh_token,
-          expires_at: data.session.expires_at ?? 0,
+          access_token: jwt,
+          refresh_token: "", // Not used with JWT auth
+          expires_at: payload.exp || 0,
           user: {
-            id: data.user.id,
-            github_username: githubUsername,
+            id: payload.sub,
+            github_username: username,
             display_name: displayName,
             avatar_url: avatarUrl,
           },
         };
 
         saveToken(token);
-        resetClient();
 
         res.writeHead(200, { "Content-Type": "text/html" });
         res.end(`
@@ -121,7 +116,7 @@ function waitForCallback(): Promise<StoredToken> {
             <body style="font-family: system-ui; display: flex; align-items: center; justify-content: center; height: 100vh; margin: 0; background: #0d1117; color: #e6edf3;">
               <div style="text-align: center;">
                 <h1>Welcome to Squade Code!</h1>
-                <p>Logged in as <strong>${githubUsername}</strong>. You can close this tab.</p>
+                <p>Logged in as <strong>${username}</strong>. You can close this tab.</p>
               </div>
             </body>
           </html>
@@ -155,12 +150,10 @@ function waitForCallback(): Promise<StoredToken> {
 export function logout() {
   closeActiveServer();
   clearToken();
-  resetClient();
 }
 
 /**
  * Closes the active OAuth callback server if one is running.
- * Useful for cleanup on app quit or when cancelling an in-progress login.
  */
 export function closeActiveServer() {
   if (activeServer) {

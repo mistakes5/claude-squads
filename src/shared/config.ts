@@ -13,15 +13,8 @@ function ensureDir() {
   }
 }
 
-export function getSupabaseConfig() {
-  const url = process.env.SUPABASE_URL;
-  const key = process.env.SUPABASE_ANON_KEY;
-  if (!url || !key) {
-    throw new Error(
-      "Missing SUPABASE_URL or SUPABASE_ANON_KEY. Set them in .env or environment."
-    );
-  }
-  return { supabaseUrl: url, supabaseAnonKey: key };
+export function getServerUrl(): string {
+  return process.env.SQUADS_SERVER_URL ?? "http://localhost:3000";
 }
 
 export function loadToken(): StoredToken | null {
@@ -60,4 +53,14 @@ export function loadSettings(): SquadsSettings {
 export function saveSettings(settings: SquadsSettings) {
   ensureDir();
   writeFileSync(SETTINGS_PATH, JSON.stringify(settings, null, 2));
+}
+
+/** @deprecated Pending migration to Express server */
+export function getSupabaseConfig(): { supabaseUrl: string; supabaseAnonKey: string } {
+  const supabaseUrl = process.env.SUPABASE_URL ?? "";
+  const supabaseAnonKey = process.env.SUPABASE_ANON_KEY ?? "";
+  if (!supabaseUrl || !supabaseAnonKey) {
+    console.warn("Supabase not configured — pending migration to Express server");
+  }
+  return { supabaseUrl, supabaseAnonKey };
 }

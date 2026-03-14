@@ -919,14 +919,19 @@
             border: 1px solid var(--border);
             backdrop-filter: blur(20px);
             -webkit-backdrop-filter: blur(20px);
-            border-radius: 10px;
-            padding: 6px 12px 6px 10px;
-            gap: 8px;
+            border-radius: 12px;
+            padding: 5px 14px 5px 10px;
+            gap: 9px;
             flex-direction: row;
             cursor: pointer;
           ">
             ${MASCOT_SVG}
-            <span class="avatar-name" style="font-size:12px;font-weight:600;color:var(--text);">Squade Code</span>
+            <span class="avatar-name" style="
+              font-size: 12px;
+              font-weight: 400;
+              letter-spacing: 0.3px;
+              color: var(--text-dim);
+            ">squade code</span>
           </div>`;
         return;
       }
