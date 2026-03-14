@@ -10,11 +10,16 @@
     "build": "tsup && tsup --config tsup.overlay.ts && cp src/overlay/overlay.html dist/overlay/",
     "build:overlay": "tsup --config tsup.overlay.ts && cp src/overlay/overlay.html dist/overlay/",
     "overlay": "pnpm build && npx electron dist/overlay/main.cjs",
-    "restart": "pkill -f 'electron dist/overlay' 2>/dev/null; sleep 0.5; pnpm overlay",
+    "relaunch": "pkill -f 'electron dist/overlay' 2>/dev/null; sleep 0.5; pnpm overlay",
     "package": "pnpm build && electron-builder --mac --dir",
     "dev:tui": "tsx src/tui/cli.ts",
     "dev:mcp": "tsx src/mcp/server.ts",
-    "setup": "tsx scripts/setup.ts"
+    "server": "tsx server/index.ts",
+    "server:dev": "tsx watch server/index.ts",
+    "setup": "tsx scripts/setup.ts",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit"
   },
   "build": {
     "appId": "com.squadecode.app",
@@ -46,19 +51,29 @@
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.27.1",
     "@supabase/supabase-js": "^2.99.1",
+    "cors": "^2.8.6",
     "dotenv": "^16.4.7",
+    "express": "^5.2.1",
     "ink": "^6.8.0",
     "ink-text-input": "^6.0.0",
+    "jsonwebtoken": "^9.0.3",
     "open": "^11.0.0",
-    "react": "^19.2.4"
+    "pg": "^8.20.0",
+    "react": "^19.2.4",
+    "socket.io": "^4.8.3"
   },
   "devDependencies": {
+    "@types/cors": "^2.8.19",
+    "@types/express": "^5.0.6",
+    "@types/jsonwebtoken": "^9.0.10",
     "@types/node": "^25.5.0",
+    "@types/pg": "^8.18.0",
     "@types/react": "^19.2.14",
     "electron": "^41.0.2",
     "electron-builder": "^26.8.1",
     "tsup": "^8.5.1",
     "tsx": "^4.21.0",
-    "typescript": "^5.9.3"
+    "typescript": "^5.9.3",
+    "vitest": "^4.1.0"
   }
 }
