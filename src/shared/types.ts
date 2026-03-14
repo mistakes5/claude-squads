@@ -69,6 +69,7 @@ export interface StoredToken {
   user: {
     id: string;
     github_username: string;
+    display_name: string | null;
     avatar_url: string | null;
   };
 }

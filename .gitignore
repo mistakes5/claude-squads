@@ -1,4 +1,8 @@
 node_modules/
 dist/
+release/
 .env
+.env.local
 *.tsbuildinfo
+*.dmg
+.DS_Store

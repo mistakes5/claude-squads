@@ -446,7 +446,7 @@
           </div>
           <div class="toggle on" id="s-notif" onclick="toggleBool('notifications', this)"></div>
         </div>
-        <div class="footer">Cmd+Shift+S to hide &middot; drag strip to move</div>
+        <div class="footer">Squade Code &middot; Cmd+Shift+S to toggle</div>
       </div>
     </div>
   </div>
@@ -642,7 +642,7 @@
             <div class="pending-label">Friend Requests</div>
             ${pending.map(f => `
               <div class="friend-item">
-                <img class="pic" src="https://github.com/${esc(f.github_username)}.png" onerror="this.style.display='none'" style="width:28px;height:28px;border-radius:7px;" />
+                <img class="pic" src="${f.avatar_url || `https://github.com/${esc(f.github_username)}.png`}" onerror="this.style.display='none'" style="width:28px;height:28px;border-radius:7px;" />
                 <div class="info">
                   <div class="name">${esc(f.github_username)}</div>
                   <div class="status-text" style="color:var(--text-muted)">wants to be friends</div>
@@ -680,7 +680,7 @@
       }
       list.innerHTML = all.map(f => `
         <div class="friend-item" onclick="openDm('${f.id}', '${esc(f.github_username)}')">
-          <img class="pic" src="https://github.com/${esc(f.github_username)}.png" onerror="this.style.display='none'" style="width:28px;height:28px;border-radius:7px;" />
+          <img class="pic" src="${f.avatar_url || `https://github.com/${esc(f.github_username)}.png`}" onerror="this.style.display='none'" style="width:28px;height:28px;border-radius:7px;" />
           <div class="info">
             <div class="name">${esc(f.github_username)}</div>
             <div class="status-text ${f.is_online ? 'online' : 'offline'}">${
@@ -760,7 +760,7 @@
       const roster = document.getElementById('roster');
       roster.innerHTML = all.map(name => `
         <div class="roster-item">
-          <img class="pic" src="https://github.com/${esc(name)}.png" onerror="this.style.display='none'" />
+          <img class="pic" src="${name === currentUsername && currentState?.avatar_url ? esc(currentState.avatar_url) : `https://github.com/${esc(name)}.png`}" onerror="this.style.display='none'" />
           <div class="info">
             <div class="name">${esc(name)}</div>
             <div class="activity">${name === state.username ? 'you' : 'online'}</div>
@@ -838,16 +838,22 @@
     window.squads.onSettingsUpdate(applySettings);
 
     // ─── GitHub OAuth ───
-    function renderGitHub(username) {
+    function renderGitHub(state) {
       const section = document.getElementById('gh-section');
+      const username = state?.username;
       if (username) {
+        const avatarSrc = state.avatar_url || `https://github.com/${esc(username)}.png`;
+        const displayName = state.display_name || username;
         section.innerHTML = `
           <div class="gh-connected">
-            <img src="https://github.com/${esc(username)}.png" onerror="this.style.display='none'" />
+            <img src="${esc(avatarSrc)}" onerror="this.style.display='none'" />
             <div>
-              <div class="gh-name">${esc(username)}</div>
-              <div class="gh-hint">Connected via GitHub</div>
+              <div class="gh-name">${esc(displayName)}</div>
+              <div class="gh-hint">@${esc(username)} · Connected via GitHub</div>
             </div>
+          </div>
+          <div class="gh-btn" style="margin-top:6px;justify-content:center;" onclick="triggerLogout()">
+            <span>Disconnect GitHub</span>
           </div>`;
       } else {
         section.innerHTML = `
@@ -862,10 +868,22 @@
       if (btn) btn.innerHTML = GH_SVG + '<span>Connecting...</span>';
       const result = await window.squads.triggerLogin();
       if (result.success) {
-        renderGitHub(result.username);
+        renderGitHub(currentState);
       } else {
         if (btn) btn.innerHTML = GH_SVG + '<span>Failed — try again</span>';
         setTimeout(() => { if (btn) btn.innerHTML = GH_SVG + '<span>Connect GitHub</span>'; }, 2000);
+      }
+    }
+
+    async function triggerLogout() {
+      const result = await window.squads.triggerLogout();
+      if (result.success) {
+        currentState = null;
+        currentUsername = '';
+        currentRoomSlug = '';
+        renderGitHub(null);
+        stripEl.innerHTML = '';
+        document.getElementById('friends-list').innerHTML = '<div class="chat-empty">connect GitHub to get started</div>';
       }
     }
 
@@ -878,7 +896,7 @@
       renderStrip(state);
       renderFriends(state);
       renderSquadTab(state);
-      renderGitHub(currentUsername);
+      renderGitHub(currentState);
       if (activeDm) renderDmMessages();
     });
 
@@ -893,7 +911,7 @@
       const overflow = all.length - 3;
       stripEl.innerHTML = shown.map(name => `
         <div class="avatar-card">
-          <img class="avatar-pic" src="https://github.com/${esc(name)}.png"
+          <img class="avatar-pic" src="${name === currentUsername && currentState?.avatar_url ? esc(currentState.avatar_url) : `https://github.com/${esc(name)}.png`}"
                onerror="this.style.display='none'" />
           <span class="avatar-name">${esc(name)}</span>
         </div>

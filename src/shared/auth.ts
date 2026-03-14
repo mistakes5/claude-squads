@@ -70,6 +70,10 @@ function waitForCallback(): Promise<StoredToken> {
           data.user.user_metadata?.user_name ??
           data.user.user_metadata?.preferred_username ??
           "unknown";
+        const displayName =
+          data.user.user_metadata?.name ??
+          data.user.user_metadata?.full_name ??
+          null;
         const avatarUrl = data.user.user_metadata?.avatar_url ?? null;
 
         // Upsert user in our users table
@@ -90,6 +94,7 @@ function waitForCallback(): Promise<StoredToken> {
           user: {
             id: data.user.id,
             github_username: githubUsername,
+            display_name: displayName,
             avatar_url: avatarUrl,
           },
         };
@@ -102,7 +107,7 @@ function waitForCallback(): Promise<StoredToken> {
           <html>
             <body style="font-family: system-ui; display: flex; align-items: center; justify-content: center; height: 100vh; margin: 0; background: #0d1117; color: #e6edf3;">
               <div style="text-align: center;">
-                <h1>You're in the squad!</h1>
+                <h1>Welcome to Squade Code!</h1>
                 <p>Logged in as <strong>${githubUsername}</strong>. You can close this tab.</p>
               </div>
             </body>

@@ -19,8 +19,9 @@ contextBridge.exposeInMainWorld("squads", {
   // Screen dimensions (sync call)
   getScreenSize: () => ipcRenderer.sendSync("get-screen-size") as { width: number; height: number },
 
-  // GitHub OAuth — opens browser for login
+  // GitHub OAuth
   triggerLogin: () => ipcRenderer.invoke("trigger-login"),
+  triggerLogout: () => ipcRenderer.invoke("trigger-logout"),
 
   // Friends
   addFriend: (username: string) => ipcRenderer.invoke("add-friend", username),

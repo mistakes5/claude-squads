@@ -1,29 +1,51 @@
 {
-  "name": "squads",
+  "name": "squade-code",
   "version": "0.1.0",
-  "description": "Social lobbies for Claude Code — squad up with friends",
+  "description": "Squade Code — social lobbies for Claude Code",
   "type": "module",
   "bin": {
-    "squads": "./dist/squads.js"
+    "squade": "./dist/squads.js"
   },
   "scripts": {
     "build": "tsup && tsup --config tsup.overlay.ts && cp src/overlay/overlay.html dist/overlay/",
     "build:overlay": "tsup --config tsup.overlay.ts && cp src/overlay/overlay.html dist/overlay/",
-    "overlay": "pnpm build:overlay && npx electron dist/overlay/main.cjs",
+    "overlay": "pnpm build && npx electron dist/overlay/main.cjs",
+    "restart": "pkill -f 'electron dist/overlay' 2>/dev/null; sleep 0.5; pnpm overlay",
+    "package": "pnpm build && electron-builder --mac --dir",
     "dev:tui": "tsx src/tui/cli.ts",
     "dev:mcp": "tsx src/mcp/server.ts",
     "setup": "tsx scripts/setup.ts"
   },
+  "build": {
+    "appId": "com.squadecode.app",
+    "productName": "Squade Code",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*"
+    ],
+    "mac": {
+      "category": "public.app-category.developer-tools",
+      "target": [
+        "dir"
+      ]
+    },
+    "extraMetadata": {
+      "main": "dist/overlay/main.cjs"
+    }
+  },
   "keywords": [
     "claude-code",
     "social",
-    "squads",
+    "squade",
     "mcp"
   ],
   "license": "MIT",
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.27.1",
     "@supabase/supabase-js": "^2.99.1",
+    "dotenv": "^16.4.7",
     "ink": "^6.8.0",
     "ink-text-input": "^6.0.0",
     "open": "^11.0.0",

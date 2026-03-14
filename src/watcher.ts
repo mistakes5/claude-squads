@@ -60,6 +60,8 @@ interface State {
   online: string[];
   unread: number;
   username: string;
+  display_name: string | null;
+  avatar_url: string | null;
   last_update: string;
   recent_messages: RecentMessage[];
   last_activity?: { action: string; detail: string; timestamp: string };
@@ -135,6 +137,8 @@ async function main() {
       online: ["torvalds", "gaearon", "sindresorhus", "defunkt", "rauchg"],
       unread: 0,
       username: mockUsername,
+      display_name: "Test Pilot",
+      avatar_url: "https://github.com/testpilot.png",
       last_update: new Date().toISOString(),
       recent_messages: [
         { username: "torvalds", content: "just pushed a kernel patch", created_at: new Date(Date.now() - 60000).toISOString() },
@@ -185,6 +189,8 @@ async function main() {
   });
 
   const username = token.user.github_username;
+  const displayName = token.user.display_name ?? null;
+  const avatarUrl = token.user.avatar_url ?? null;
   const userId = token.user.id;
 
   // ─── State ───
@@ -215,6 +221,8 @@ async function main() {
       online: onlineUsers,
       unread: unreadCount,
       username,
+      display_name: displayName,
+      avatar_url: avatarUrl,
       last_update: new Date().toISOString(),
       recent_messages: recentMessages.slice(-20),
       friends,
@@ -420,7 +428,7 @@ async function main() {
     channel.on("presence", { event: "join" }, ({ newPresences }) => {
       for (const p of newPresences as any[]) {
         if (p.github_username && p.github_username !== username) {
-          notify("Squads", `${p.github_username} joined ${currentRoomName}`);
+          notify("Squade Code", `${p.github_username} joined ${currentRoomName}`);
         }
       }
     });
@@ -442,13 +450,13 @@ async function main() {
 
     channel.on("broadcast", { event: "ping" }, ({ payload }: any) => {
       if (payload.to_username === username) {
-        notify("Squads Ping!", `${payload.from_username}: ${payload.message}`);
+        notify("Squade Code", `${payload.from_username}: ${payload.message}`);
       }
     });
 
     channel.on("broadcast", { event: "emote" }, ({ payload }: any) => {
       if (payload.github_username !== username) {
-        notify("Squads", `${payload.github_username} ${payload.emote}`);
+        notify("Squade Code", `${payload.github_username} ${payload.emote}`);
       }
     });
 
@@ -522,7 +530,7 @@ async function main() {
     updateState();
   }
 
-  console.log(`Squads watcher running for ${username}. Ctrl+C to stop.`);
+  console.log(`Squade Code watcher running for ${username}. Ctrl+C to stop.`);
 
   // Poll friends every 30s
   friendsPollInterval = setInterval(fetchFriends, 30_000);

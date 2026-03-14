@@ -1,5 +1,5 @@
 /**
- * Squads Overlay — Electron main process.
+ * Squade Code — Electron main process.
  *
  * Architecture: Full-screen transparent overlay.
  * - Window covers entire work area, transparent, always on top.
@@ -8,6 +8,7 @@
  * - On mouseleave UI content → switch back to click-through.
  * - Dragging moves CSS position inside the window, NOT the window itself.
  * - No window resize on panel open/close — panel is CSS fixed positioned.
+ * - Watcher daemon runs as a child process (auto-restart on crash).
  */
 
 import {
@@ -20,6 +21,7 @@ import {
   watchFile, unwatchFile, mkdirSync,
 } from "fs";
 import { homedir } from "os";
+import { fork, ChildProcess } from "child_process";
 
 // Load env vars for Supabase access (needed for OAuth, friends, DMs)
 try {
@@ -45,6 +47,41 @@ function saveSettings(settings: any) {
 let mainWindow: BrowserWindow | null = null;
 let tray: Tray | null = null;
 let interactive = false;
+let watcherProcess: ChildProcess | null = null;
+let watcherShouldRestart = true;
+
+function spawnWatcher() {
+  const watcherPath = join(__dirname, "../watcher.js");
+  if (!existsSync(watcherPath)) {
+    console.warn("Watcher not found at", watcherPath);
+    return;
+  }
+  if (watcherProcess) {
+    watcherProcess.kill("SIGTERM");
+    watcherProcess = null;
+  }
+  watcherProcess = fork(watcherPath, [], {
+    env: { ...process.env },
+    stdio: "pipe",
+  });
+  watcherProcess.stdout?.on("data", (d: Buffer) => console.log(`[watcher] ${d.toString().trim()}`));
+  watcherProcess.stderr?.on("data", (d: Buffer) => console.error(`[watcher] ${d.toString().trim()}`));
+  watcherProcess.on("exit", (code) => {
+    console.log(`Watcher exited with code ${code}`);
+    watcherProcess = null;
+    if (watcherShouldRestart && code !== 0) {
+      setTimeout(spawnWatcher, 3000);
+    }
+  });
+}
+
+function killWatcher() {
+  watcherShouldRestart = false;
+  if (watcherProcess) {
+    watcherProcess.kill("SIGTERM");
+    watcherProcess = null;
+  }
+}
 
 function createWindow() {
   const { width: sw, height: sh } = screen.getPrimaryDisplay().workAreaSize;
@@ -72,10 +109,6 @@ function createWindow() {
 
   mainWindow.setIgnoreMouseEvents(true, { forward: true });
   mainWindow.loadFile(join(__dirname, "overlay.html"));
-
-  if (process.platform === "darwin") {
-    app.dock.hide();
-  }
 
   mainWindow.on("closed", () => { mainWindow = null; });
 }
@@ -142,6 +175,10 @@ app.on("second-instance", () => {
 app.whenReady().then(() => {
   createWindow();
 
+  // Spawn watcher daemon as child process
+  watcherShouldRestart = true;
+  spawnWatcher();
+
   // Watch state file
   watchFile(STATE_FILE, { interval: 1000 }, sendState);
   setTimeout(sendState, 500);
@@ -176,12 +213,36 @@ app.whenReady().then(() => {
   // ─── IPC: GitHub OAuth ───
   ipcMain.handle("trigger-login", async () => {
     try {
-      // Dynamic import to avoid loading auth module at startup
       const authModule = await import("../shared/auth.js");
       const user = await authModule.login();
       supabaseClient = null; // Reset client so it picks up new token
+      // Restart watcher to pick up new auth
+      watcherShouldRestart = true;
+      spawnWatcher();
       sendState();
       return { success: true, username: user?.github_username };
+    } catch (err: any) {
+      return { success: false, error: err.message };
+    }
+  });
+
+  // ─── IPC: Disconnect GitHub ───
+  ipcMain.handle("trigger-logout", async () => {
+    try {
+      const authModule = await import("../shared/auth.js");
+      authModule.logout();
+      supabaseClient = null;
+      killWatcher();
+      // Write empty state so overlay clears
+      if (!existsSync(SQUADS_DIR)) mkdirSync(SQUADS_DIR, { recursive: true });
+      writeFileSync(STATE_FILE, JSON.stringify({
+        room_name: "", room_slug: "", online: [], unread: 0,
+        username: "", display_name: null, avatar_url: null,
+        last_update: new Date().toISOString(),
+        recent_messages: [], friends: [], dm_messages: {}, pending_invites: [],
+      }, null, 2));
+      sendState();
+      return { success: true };
     } catch (err: any) {
       return { success: false, error: err.message };
     }
@@ -349,7 +410,7 @@ app.whenReady().then(() => {
     )
   );
   tray = new Tray(trayIcon);
-  tray.setToolTip("Squads");
+  tray.setToolTip("Squade Code");
   tray.setContextMenu(
     Menu.buildFromTemplate([
       {
@@ -360,7 +421,7 @@ app.whenReady().then(() => {
         },
       },
       { type: "separator" },
-      { label: "Quit Squads", click: () => app.quit() },
+      { label: "Quit Squade Code", click: () => app.quit() },
     ])
   );
 });
@@ -368,6 +429,7 @@ app.whenReady().then(() => {
 app.on("will-quit", () => {
   globalShortcut.unregisterAll();
   unwatchFile(STATE_FILE);
+  killWatcher();
 });
 
 app.on("window-all-closed", () => app.quit());
