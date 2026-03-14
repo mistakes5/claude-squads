@@ -1299,7 +1299,8 @@
 
     function getMembers(state) {
       const online = (state.online || []).filter(n => n !== state.username);
-      return [state.username || '', ...online];
+      const myName = state.display_name || state.username || '';
+      return [myName, ...online];
     }
 
     const MASCOT_SVG = `<svg viewBox="0 0 959 744" width="24" height="19" xmlns="http://www.w3.org/2000/svg">
@@ -1335,13 +1336,19 @@
       const all = getMembers(state);
       const shown = all.slice(0, 3);
       const overflow = all.length - 3;
-      stripEl.innerHTML = shown.map(name => `
-        <div class="avatar-card ${tierClass(name)}">
-          <img class="avatar-pic" src="${name === currentUsername && currentState?.avatar_url ? esc(currentState.avatar_url) : `https://github.com/${esc(name)}.png`}"
-               onerror="this.style.display='none'" />
+      const myDisplayName = state.display_name || state.username || '';
+      stripEl.innerHTML = shown.map((name, i) => {
+        const isMe = i === 0;
+        const avatarSrc = isMe && currentState?.avatar_url
+          ? esc(currentState.avatar_url)
+          : `https://github.com/${esc(isMe ? currentUsername : name)}.png`;
+        const tierName = isMe ? currentUsername : name;
+        return `
+        <div class="avatar-card ${tierClass(tierName)}">
+          <img class="avatar-pic" src="${avatarSrc}" onerror="this.style.display='none'" />
           <span class="avatar-name">${esc(name)}</span>
-        </div>
-      `).join('') + (overflow > 0 ? `<div class="overflow-text">+${overflow} more</div>` : '');
+        </div>`;
+      }).join('') + (overflow > 0 ? `<div class="overflow-text">+${overflow} more</div>` : '');
     }
 
     function esc(s) {

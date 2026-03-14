@@ -160,9 +160,20 @@ async function main() {
 
   const serverUrl = getServerUrl();
   const username = token.user.github_username;
-  const displayName = token.user.display_name ?? null;
-  const avatarUrl = token.user.avatar_url ?? null;
+  let displayName = token.user.display_name ?? null;
+  let avatarUrl = token.user.avatar_url ?? null;
   const userId = token.user.id;
+
+  // Re-read token.json for display_name/avatar changes (set by overlay IPC)
+  function refreshProfile() {
+    try {
+      const fresh = loadToken();
+      if (fresh) {
+        displayName = fresh.user.display_name ?? null;
+        avatarUrl = fresh.user.avatar_url ?? null;
+      }
+    } catch {}
+  }
 
   // ─── State ───
   let socket: Socket | null = null;
@@ -475,8 +486,10 @@ async function main() {
   setInterval(fetchMyGamification, 5 * 60_000);
   setInterval(fetchFriendTiers, 2 * 60_000);
 
-  // Re-read settings every 10s for room changes
+  // Re-read settings every 10s for room changes + refresh profile
   settingsPollInterval = setInterval(async () => {
+    refreshProfile();
+    updateState();
     const newSettings = loadSettings();
     if (newSettings.current_room && newSettings.current_room !== currentRoomSlug) {
       await watchRoom(newSettings.current_room);
