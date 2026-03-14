@@ -1,0 +1,916 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <style>
+    /* ─── DARK THEME (default) ─── */
+    :root {
+      --accent: #C15F3C;
+      --accent-soft: rgba(193, 95, 60, 0.15);
+      --peach: #DE7356;
+      --text: #F4F3EE;
+      --text-dim: #B1ADA1;
+      --text-muted: #6B6560;
+      --surface: rgba(18, 16, 15, 0.92);
+      --online: #5BA37C;
+      --offline: #6B6560;
+      --border: rgba(74, 68, 64, 0.5);
+      --scrollbar: rgba(74, 68, 64, 0.5);
+    }
+
+    /* ─── LIGHT THEME ─── */
+    body.theme-light {
+      --accent: #C15F3C;
+      --accent-soft: rgba(193, 95, 60, 0.1);
+      --peach: #B8462B;
+      --text: #2D2926;
+      --text-dim: #6B6560;
+      --text-muted: #9B9590;
+      --surface: rgba(244, 243, 238, 0.94);
+      --online: #4A8F6A;
+      --offline: #9B9590;
+      --border: rgba(180, 170, 160, 0.4);
+      --scrollbar: rgba(180, 170, 160, 0.5);
+    }
+
+    /* ─── TERMINAL THEME (Claude Code / Tokyo Night blue-gray) ─── */
+    body.theme-terminal {
+      --accent: #C15F3C;
+      --accent-soft: rgba(193, 95, 60, 0.12);
+      --peach: #C15F3C;
+      --text: #C0CAF5;
+      --text-dim: #7982A9;
+      --text-muted: #565F89;
+      --surface: rgba(26, 27, 38, 0.95);
+      --online: #9ECE6A;
+      --offline: #565F89;
+      --border: rgba(41, 46, 66, 0.7);
+      --scrollbar: rgba(41, 46, 66, 0.5);
+    }
+    body.theme-terminal {
+      font-family: 'SF Mono', 'Menlo', 'Monaco', 'Consolas', monospace;
+    }
+    body.theme-terminal .avatar-name { text-shadow: 0 0 6px rgba(193, 95, 60, 0.4); }
+    body.theme-terminal .msg .author { color: #C15F3C; }
+    body.theme-terminal .toggle.on { background: #C15F3C; }
+    body.theme-terminal .tab.active { color: #C15F3C; border-bottom-color: #C15F3C; }
+    body.theme-terminal .setting-select option { background: #1A1B26; color: #C0CAF5; }
+    body.theme-terminal .chat-input { background: rgba(41, 46, 66, 0.5); }
+
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      font-family: -apple-system, 'SF Pro Text', 'Helvetica Neue', sans-serif;
+      font-size: 12px;
+      line-height: 1.4;
+      color: var(--text);
+      background: transparent;
+      overflow: hidden;
+      user-select: none;
+      width: 100vw;
+      height: 100vh;
+    }
+
+    #oc { position: fixed; }
+
+    /* ─── STRIP ─── */
+    .strip {
+      padding: 8px 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 3px;
+      align-items: flex-end;
+      cursor: grab;
+    }
+    .strip:active { cursor: grabbing; }
+
+    .avatar-card {
+      display: flex; align-items: center; gap: 6px;
+      flex-direction: row-reverse; cursor: pointer;
+    }
+    .avatar-pic {
+      width: 24px; height: 24px; border-radius: 6px;
+      object-fit: cover; flex-shrink: 0;
+    }
+    .avatar-name {
+      font-size: 11px; font-weight: 500; color: var(--text);
+      white-space: nowrap; text-shadow: 0 1px 4px rgba(0,0,0,0.6);
+    }
+    .overflow-text {
+      font-size: 10px; color: var(--text-muted);
+      text-shadow: 0 1px 3px rgba(0,0,0,0.5);
+    }
+
+    /* ─── PANEL ─── */
+    #panel {
+      display: none; position: fixed;
+      width: 320px; height: 440px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      backdrop-filter: blur(28px);
+      -webkit-backdrop-filter: blur(28px);
+      overflow: hidden;
+    }
+    #panel.open { display: flex; flex-direction: column; }
+
+    .panel-inner {
+      padding: 10px 12px;
+      display: flex; flex-direction: column; gap: 4px;
+      flex: 1; min-height: 0; overflow: hidden;
+    }
+
+    /* ─── TABS ─── */
+    .tabs {
+      display: flex;
+      border-bottom: 1px solid var(--border);
+      margin-bottom: 4px; flex-shrink: 0;
+    }
+    .tab {
+      flex: 1; padding: 7px 0; text-align: center;
+      font-size: 10px; font-weight: 600;
+      text-transform: uppercase; letter-spacing: 0.8px;
+      color: var(--text-muted); cursor: pointer;
+      border-bottom: 2px solid transparent;
+      transition: color 0.15s, border-color 0.15s;
+    }
+    .tab:hover { color: var(--text-dim); }
+    .tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+
+    .tab-body { display: none; flex-direction: column; gap: 4px; flex: 1; min-height: 0; overflow: hidden; }
+    .tab-body.active { display: flex; }
+
+    /* ─── FRIENDS LIST ─── */
+    .add-friend-row {
+      display: flex; gap: 6px; flex-shrink: 0;
+      padding-bottom: 6px; border-bottom: 1px solid var(--border);
+    }
+    .add-friend-input {
+      flex: 1; background: rgba(255,255,255,0.06);
+      border: 1px solid var(--border); border-radius: 8px;
+      padding: 5px 8px; color: var(--text); font-size: 11px;
+      font-family: inherit; outline: none;
+    }
+    .add-friend-input::placeholder { color: var(--text-muted); }
+    .add-friend-input:focus { border-color: var(--accent); }
+    body.theme-light .add-friend-input { background: rgba(0,0,0,0.04); }
+    body.theme-terminal .add-friend-input { background: rgba(41, 46, 66, 0.5); }
+
+    .add-friend-btn {
+      background: var(--accent); border: none; border-radius: 8px;
+      color: #fff; font-size: 10px; font-weight: 600;
+      padding: 5px 10px; cursor: pointer;
+    }
+    .add-friend-btn:hover { opacity: 0.85; }
+
+    .pending-section {
+      padding: 4px 0; flex-shrink: 0;
+    }
+    .pending-label {
+      font-size: 9px; font-weight: 600; text-transform: uppercase;
+      letter-spacing: 0.5px; color: var(--text-muted); padding: 4px 0;
+    }
+
+    .friends-list {
+      flex: 1; overflow-y: auto;
+      scrollbar-width: thin; scrollbar-color: var(--scrollbar) transparent;
+    }
+    .friends-list::-webkit-scrollbar { width: 3px; }
+    .friends-list::-webkit-scrollbar-thumb { background: var(--scrollbar); border-radius: 3px; }
+
+    .friend-item {
+      display: flex; align-items: center; gap: 8px;
+      padding: 5px 4px; border-bottom: 1px solid var(--border);
+      cursor: pointer; transition: background 0.12s;
+    }
+    .friend-item:hover { background: var(--accent-soft); border-radius: 8px; }
+    .friend-item:last-child { border-bottom: none; }
+
+    .friend-item .pic {
+      width: 28px; height: 28px; border-radius: 7px;
+      object-fit: cover; flex-shrink: 0;
+      position: relative;
+    }
+    .friend-item .info { flex: 1; min-width: 0; }
+    .friend-item .name { font-weight: 600; font-size: 11px; color: var(--text); }
+    .friend-item .status-text { font-size: 9px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .friend-item .status-text.online { color: var(--online); }
+    .friend-item .status-text.offline { color: var(--offline); }
+
+    .online-dot, .offline-dot {
+      width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0;
+    }
+    .online-dot { background: var(--online); box-shadow: 0 0 4px var(--online); }
+    .offline-dot { background: var(--offline); }
+
+    .friend-actions { display: flex; gap: 4px; flex-shrink: 0; }
+    .friend-action-btn {
+      background: var(--accent-soft); border: 1px solid var(--border);
+      border-radius: 6px; color: var(--text); font-size: 9px;
+      padding: 3px 6px; cursor: pointer; transition: background 0.15s;
+    }
+    .friend-action-btn:hover { background: var(--accent); color: #fff; }
+    .friend-action-btn.accept { background: var(--online); color: #fff; border-color: transparent; }
+    .friend-action-btn.accept:hover { opacity: 0.85; }
+
+    /* ─── DM VIEW (slides in over friends list) ─── */
+    .dm-view { display: none; flex-direction: column; flex: 1; min-height: 0; }
+    .dm-view.active { display: flex; }
+
+    .dm-header {
+      display: flex; align-items: center; gap: 6px;
+      padding-bottom: 6px; border-bottom: 1px solid var(--border);
+      flex-shrink: 0;
+    }
+    .dm-back {
+      background: none; border: none; color: var(--text-muted);
+      font-size: 14px; cursor: pointer; padding: 2px 4px;
+    }
+    .dm-back:hover { color: var(--text); }
+    .dm-recipient { font-weight: 600; font-size: 12px; color: var(--text); }
+
+    /* ─── ROSTER ─── */
+    .roster {
+      overflow-y: auto;
+      scrollbar-width: thin; scrollbar-color: var(--scrollbar) transparent;
+    }
+    .roster::-webkit-scrollbar { width: 3px; }
+    .roster::-webkit-scrollbar-thumb { background: var(--scrollbar); border-radius: 3px; }
+
+    .roster-item {
+      display: flex; align-items: center; gap: 8px;
+      padding: 5px 4px; border-bottom: 1px solid var(--border);
+      transition: background 0.12s;
+    }
+    .roster-item:hover { background: var(--accent-soft); border-radius: 8px; }
+    .roster-item:last-child { border-bottom: none; }
+    .roster-item .pic { width: 28px; height: 28px; border-radius: 7px; border: 2px solid var(--online); object-fit: cover; flex-shrink: 0; }
+    .roster-item .info { flex: 1; min-width: 0; }
+    .roster-item .name { font-weight: 600; font-size: 11px; color: var(--text); }
+    .roster-item .activity { font-size: 9px; color: var(--text-dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+    /* ─── CHAT (used in both DM and Squad) ─── */
+    .chat-area {
+      flex: 1; overflow-y: auto;
+      scrollbar-width: thin; scrollbar-color: var(--scrollbar) transparent;
+      padding: 2px 0;
+    }
+    .chat-area::-webkit-scrollbar { width: 3px; }
+    .chat-area::-webkit-scrollbar-thumb { background: var(--scrollbar); border-radius: 3px; }
+
+    .chat-empty { color: var(--text-muted); font-style: italic; font-size: 10px; padding: 12px 0; text-align: center; }
+    .msg { padding: 3px 0; }
+    .msg .time { color: var(--text-muted); font-size: 9px; margin-right: 4px; }
+    .msg .author { color: var(--peach); font-weight: 600; font-size: 11px; margin-right: 4px; }
+    .msg .text { color: var(--text); font-size: 11px; }
+
+    .chat-input-row {
+      display: flex; gap: 6px; padding-top: 6px;
+      border-top: 1px solid var(--border); flex-shrink: 0;
+    }
+    .chat-input {
+      flex: 1; background: rgba(255,255,255,0.06);
+      border: 1px solid var(--border); border-radius: 8px;
+      padding: 6px 10px; color: var(--text); font-size: 11px;
+      font-family: inherit; outline: none;
+    }
+    .chat-input::placeholder { color: var(--text-muted); }
+    .chat-input:focus { border-color: var(--accent); }
+    body.theme-light .chat-input { background: rgba(0,0,0,0.04); }
+
+    .chat-send {
+      background: var(--accent); border: none; border-radius: 8px;
+      color: #fff; font-size: 10px; font-weight: 600;
+      padding: 6px 12px; cursor: pointer; transition: opacity 0.15s;
+    }
+    .chat-send:hover { opacity: 0.85; }
+
+    /* ─── INVITE BANNER ─── */
+    .invite-banner {
+      background: var(--accent-soft); border: 1px solid var(--accent);
+      border-radius: 8px; padding: 6px 8px; margin-bottom: 4px;
+      display: flex; align-items: center; justify-content: space-between;
+      flex-shrink: 0;
+    }
+    .invite-text { font-size: 10px; color: var(--text); }
+    .invite-text b { color: var(--peach); }
+
+    /* ─── SETTINGS ─── */
+    .setting-row {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 7px 2px; border-bottom: 1px solid var(--border);
+    }
+    .setting-row:last-child { border-bottom: none; }
+    .setting-label { font-size: 11px; color: var(--text); }
+    .setting-desc { font-size: 9px; color: var(--text-muted); margin-top: 1px; }
+
+    .toggle {
+      width: 34px; height: 18px; border-radius: 9px;
+      background: var(--border); cursor: pointer;
+      position: relative; transition: background 0.2s; flex-shrink: 0;
+    }
+    .toggle.on { background: var(--accent); }
+    .toggle::after {
+      content: ''; position: absolute;
+      width: 14px; height: 14px; border-radius: 50%;
+      background: #F4F3EE; top: 2px; left: 2px;
+      transition: transform 0.2s;
+    }
+    .toggle.on::after { transform: translateX(16px); }
+    body.theme-light .toggle::after { background: #2D2926; }
+
+    .setting-select {
+      background: rgba(255,255,255,0.08);
+      border: 1px solid var(--border); border-radius: 6px;
+      color: var(--text); font-size: 10px; padding: 3px 6px;
+      cursor: pointer; outline: none;
+    }
+    body.theme-light .setting-select { background: rgba(0,0,0,0.05); }
+    .setting-select option { background: #1a1816; color: #F4F3EE; }
+    body.theme-light .setting-select option { background: #f4f3ee; color: #2D2926; }
+
+    .gh-btn {
+      display: flex; align-items: center; gap: 6px;
+      padding: 7px 10px; background: var(--accent-soft);
+      border: 1px solid var(--border); border-radius: 8px;
+      color: var(--text); font-size: 11px; font-weight: 500;
+      cursor: pointer; transition: background 0.15s;
+    }
+    .gh-btn:hover { background: var(--accent); color: #fff; }
+    .gh-btn svg { width: 16px; height: 16px; fill: currentColor; }
+
+    .gh-connected { display: flex; align-items: center; gap: 8px; padding: 6px 2px; }
+    .gh-connected img { width: 28px; height: 28px; border-radius: 6px; }
+    .gh-connected .gh-name { font-weight: 600; font-size: 12px; color: var(--text); }
+    .gh-connected .gh-hint { font-size: 9px; color: var(--text-muted); }
+
+    .footer { padding: 4px 0 2px; font-size: 9px; color: var(--text-muted); text-align: center; }
+
+    .squad-divider {
+      font-size: 9px; font-weight: 600; text-transform: uppercase;
+      letter-spacing: 0.5px; color: var(--text-muted); padding: 6px 0 2px;
+      flex-shrink: 0;
+    }
+
+    .no-room { color: var(--text-muted); font-style: italic; font-size: 10px; padding: 12px 0; text-align: center; }
+  </style>
+</head>
+<body>
+  <div id="oc">
+    <div class="strip" id="strip"></div>
+  </div>
+
+  <div id="panel">
+    <div class="panel-inner">
+      <div class="tabs">
+        <div class="tab active" data-tab="friends" onclick="switchTab('friends')">Friends</div>
+        <div class="tab" data-tab="squad" onclick="switchTab('squad')">Squad</div>
+        <div class="tab" data-tab="settings" onclick="switchTab('settings')">Settings</div>
+      </div>
+
+      <!-- ─── FRIENDS TAB ─── -->
+      <div class="tab-body active" id="tab-friends">
+        <!-- Friends list view (default) -->
+        <div id="friends-list-view">
+          <div class="add-friend-row">
+            <input class="add-friend-input" id="add-friend-input" type="text"
+                   placeholder="GitHub username..." autocomplete="off" />
+            <button class="add-friend-btn" onclick="addFriend()">Add</button>
+          </div>
+          <div id="invites-area"></div>
+          <div id="pending-area"></div>
+          <div class="friends-list" id="friends-list"></div>
+        </div>
+
+        <!-- DM view (replaces friends list when chatting) -->
+        <div class="dm-view" id="dm-view">
+          <div class="dm-header">
+            <button class="dm-back" onclick="closeDm()">&larr;</button>
+            <span class="dm-recipient" id="dm-recipient"></span>
+            <span class="offline-dot" id="dm-status-dot"></span>
+          </div>
+          <div class="chat-area" id="dm-chat">
+            <div class="chat-empty">start a conversation</div>
+          </div>
+          <div class="chat-input-row">
+            <input class="chat-input" id="dm-input" type="text"
+                   placeholder="Type a message..." autocomplete="off" />
+            <button class="chat-send" onclick="sendDm()">Send</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- ─── SQUAD TAB (roster + chat) ─── -->
+      <div class="tab-body" id="tab-squad">
+        <div id="squad-content">
+          <div class="squad-divider">Members</div>
+          <div class="roster" id="roster" style="max-height: 140px;"></div>
+          <div class="squad-divider">Chat</div>
+          <div class="chat-area" id="squad-chat" style="flex: 1;">
+            <div class="chat-empty">no messages yet</div>
+          </div>
+          <div class="chat-input-row">
+            <input class="chat-input" id="squad-chat-input" type="text"
+                   placeholder="Message squad..." autocomplete="off" />
+            <button class="chat-send" onclick="sendSquadChat()">Send</button>
+          </div>
+        </div>
+        <div class="no-room" id="no-room" style="display:none;">Join a squad to chat</div>
+      </div>
+
+      <!-- ─── SETTINGS TAB ─── -->
+      <div class="tab-body" id="tab-settings">
+        <div id="gh-section"></div>
+        <div class="setting-row">
+          <div>
+            <div class="setting-label">Theme</div>
+            <div class="setting-desc">Overlay appearance</div>
+          </div>
+          <select class="setting-select" id="s-theme" onchange="saveSetting('theme', this.value)">
+            <option value="dark">Dark</option>
+            <option value="light">Light</option>
+            <option value="terminal">Terminal</option>
+          </select>
+        </div>
+        <div class="setting-row">
+          <div>
+            <div class="setting-label">Always on top</div>
+            <div class="setting-desc">Keep above other windows</div>
+          </div>
+          <div class="toggle on" id="s-ontop" onclick="toggleBool('always_on_top', this)"></div>
+        </div>
+        <div class="setting-row">
+          <div>
+            <div class="setting-label">Notifications</div>
+            <div class="setting-desc">macOS alerts for messages</div>
+          </div>
+          <div class="toggle on" id="s-notif" onclick="toggleBool('notifications', this)"></div>
+        </div>
+        <div class="footer">Cmd+Shift+S to hide &middot; drag strip to move</div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const GH_SVG = '<svg viewBox="0 0 16 16"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>';
+
+    const oc = document.getElementById('oc');
+    const stripEl = document.getElementById('strip');
+    const panelEl = document.getElementById('panel');
+
+    let panelOpen = false;
+    let currentUsername = '';
+    let currentRoomSlug = '';
+    let cursorOver = false;
+    let leaveTimer = null;
+    let dragState = null;
+    let currentState = null;
+    let activeDm = null; // { friendId, channelId, username }
+
+    // ─── Position ───
+    const screenSize = window.squads.getScreenSize();
+    let posX = screenSize.width - 220;
+    let posY = screenSize.height - 100;
+
+    function applyPosition() {
+      oc.style.left = posX + 'px';
+      oc.style.top = posY + 'px';
+    }
+    applyPosition();
+
+    // ─── Interactive toggle ───
+    let overStrip = false, overPanel = false;
+
+    function enterUI() {
+      cursorOver = true;
+      if (leaveTimer) { clearTimeout(leaveTimer); leaveTimer = null; }
+      window.squads.enterInteractive();
+    }
+    function leaveUI() {
+      cursorOver = overStrip || overPanel;
+      if (cursorOver || dragState) return;
+      scheduleLeave();
+    }
+
+    oc.addEventListener('mouseenter', () => { overStrip = true; enterUI(); });
+    oc.addEventListener('mouseleave', () => { overStrip = false; leaveUI(); });
+    panelEl.addEventListener('mouseenter', () => { overPanel = true; enterUI(); });
+    panelEl.addEventListener('mouseleave', () => { overPanel = false; leaveUI(); });
+
+    function scheduleLeave() {
+      if (leaveTimer) return;
+      leaveTimer = setTimeout(() => {
+        leaveTimer = null;
+        if (overStrip || overPanel || dragState) return;
+        if (document.activeElement && document.activeElement.tagName === 'INPUT') return;
+        if (panelOpen) closePanel();
+        window.squads.leaveInteractive();
+      }, 250);
+    }
+
+    document.addEventListener('mousedown', (e) => {
+      if (!e.target.closest('#oc') && !e.target.closest('#panel')) {
+        if (panelOpen) closePanel();
+        window.squads.leaveInteractive();
+      }
+    });
+
+    // ─── Drag ───
+    stripEl.addEventListener('pointerdown', (e) => {
+      if (e.button !== 0) return;
+      e.preventDefault();
+      dragState = {
+        startX: e.clientX, startY: e.clientY,
+        startLeft: posX, startTop: posY,
+        moved: false,
+        isAvatarClick: !!e.target.closest('.avatar-card'),
+      };
+      stripEl.setPointerCapture(e.pointerId);
+    });
+
+    stripEl.addEventListener('pointermove', (e) => {
+      if (!dragState) return;
+      const dx = e.clientX - dragState.startX;
+      const dy = e.clientY - dragState.startY;
+      if (!dragState.moved && Math.abs(dx) < 4 && Math.abs(dy) < 4) return;
+      dragState.moved = true;
+      posX = dragState.startLeft + dx;
+      posY = dragState.startTop + dy;
+      applyPosition();
+    });
+
+    stripEl.addEventListener('pointerup', () => {
+      if (!dragState) return;
+      const wasDrag = dragState.moved;
+      const wasAvatar = dragState.isAvatarClick;
+      dragState = null;
+      if (wasDrag) {
+        posX = Math.max(0, Math.min(posX, screenSize.width - 60));
+        posY = Math.max(0, Math.min(posY, screenSize.height - 40));
+        applyPosition();
+        window.squads.saveSetting('pos_x', posX);
+        window.squads.saveSetting('pos_y', posY);
+      } else if (wasAvatar) {
+        togglePanel();
+      }
+    });
+
+    // ─── Panel ───
+    const PANEL_W = 320, PANEL_H = 440, PANEL_GAP = 6;
+
+    function togglePanel() { panelOpen ? closePanel() : openPanel(); }
+
+    function openPanel() {
+      if (panelOpen) return;
+      panelOpen = true;
+      const sr = stripEl.getBoundingClientRect();
+      const sw = screenSize.width, sh = screenSize.height;
+      let py;
+      if (sr.top >= PANEL_H + PANEL_GAP) py = sr.top - PANEL_H - PANEL_GAP;
+      else if (sh - sr.bottom >= PANEL_H + PANEL_GAP) py = sr.bottom + PANEL_GAP;
+      else py = sr.top > sh - sr.bottom ? Math.max(4, sr.top - PANEL_H - PANEL_GAP) : sr.bottom + PANEL_GAP;
+      let px = sr.right - PANEL_W;
+      if (px < 4) px = 4;
+      if (px + PANEL_W > sw - 4) px = sw - PANEL_W - 4;
+      panelEl.style.left = px + 'px';
+      panelEl.style.top = py + 'px';
+      panelEl.classList.add('open');
+    }
+
+    function closePanel() {
+      if (!panelOpen) return;
+      panelOpen = false;
+      panelEl.classList.remove('open');
+      closeDm();
+    }
+
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') {
+        if (activeDm) closeDm();
+        else if (panelOpen) closePanel();
+      }
+    });
+
+    // ─── Tabs ───
+    function switchTab(name) {
+      document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.dataset.tab === name));
+      document.querySelectorAll('.tab-body').forEach(t => t.classList.toggle('active', t.id === 'tab-' + name));
+      if (name !== 'friends') closeDm();
+    }
+
+    // ─── Friends ───
+    async function addFriend() {
+      const input = document.getElementById('add-friend-input');
+      const name = input.value.trim();
+      if (!name) return;
+      input.value = '';
+      const result = await window.squads.addFriend(name);
+      if (!result.success) {
+        input.placeholder = result.error || 'Failed';
+        setTimeout(() => { input.placeholder = 'GitHub username...'; }, 2000);
+      }
+    }
+
+    document.getElementById('add-friend-input').addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') { e.preventDefault(); addFriend(); }
+      e.stopPropagation();
+    });
+
+    async function acceptFriend(username) {
+      await window.squads.acceptFriend(username);
+    }
+
+    async function inviteToSquad(friendId) {
+      const result = await window.squads.inviteToSquad(friendId);
+      if (!result.success) console.warn('Invite failed:', result.error);
+    }
+
+    function renderFriends(state) {
+      const friends = state.friends || [];
+      const pending = friends.filter(f => f.status === 'pending' && f.direction === 'received');
+      const accepted = friends.filter(f => f.status === 'accepted');
+      const sentPending = friends.filter(f => f.status === 'pending' && f.direction === 'sent');
+
+      // Online first, then offline
+      accepted.sort((a, b) => (b.is_online ? 1 : 0) - (a.is_online ? 1 : 0));
+
+      // Pending requests
+      const pendingArea = document.getElementById('pending-area');
+      if (pending.length > 0) {
+        pendingArea.innerHTML = `
+          <div class="pending-section">
+            <div class="pending-label">Friend Requests</div>
+            ${pending.map(f => `
+              <div class="friend-item">
+                <img class="pic" src="https://github.com/${esc(f.github_username)}.png" onerror="this.style.display='none'" style="width:28px;height:28px;border-radius:7px;" />
+                <div class="info">
+                  <div class="name">${esc(f.github_username)}</div>
+                  <div class="status-text" style="color:var(--text-muted)">wants to be friends</div>
+                </div>
+                <div class="friend-actions">
+                  <button class="friend-action-btn accept" onclick="acceptFriend('${esc(f.github_username)}')">Accept</button>
+                </div>
+              </div>
+            `).join('')}
+          </div>`;
+      } else {
+        pendingArea.innerHTML = '';
+      }
+
+      // Invites
+      const invites = state.pending_invites || [];
+      const invitesArea = document.getElementById('invites-area');
+      if (invites.length > 0) {
+        invitesArea.innerHTML = invites.map(inv => `
+          <div class="invite-banner">
+            <span class="invite-text"><b>${esc(inv.from_username)}</b> invited you to <b>${esc(inv.room_name)}</b></span>
+            <button class="friend-action-btn accept" onclick="window.squads.acceptInvite('${esc(inv.room_slug)}')">Join</button>
+          </div>
+        `).join('');
+      } else {
+        invitesArea.innerHTML = '';
+      }
+
+      // Friends list
+      const all = [...accepted, ...sentPending];
+      const list = document.getElementById('friends-list');
+      if (all.length === 0) {
+        list.innerHTML = '<div class="chat-empty">no friends yet — add someone above</div>';
+        return;
+      }
+      list.innerHTML = all.map(f => `
+        <div class="friend-item" onclick="openDm('${f.id}', '${esc(f.github_username)}')">
+          <img class="pic" src="https://github.com/${esc(f.github_username)}.png" onerror="this.style.display='none'" style="width:28px;height:28px;border-radius:7px;" />
+          <div class="info">
+            <div class="name">${esc(f.github_username)}</div>
+            <div class="status-text ${f.is_online ? 'online' : 'offline'}">${
+              f.status === 'pending' ? 'request sent' : (f.is_online ? 'online' : 'offline')
+            }</div>
+          </div>
+          <div class="${f.is_online ? 'online-dot' : 'offline-dot'}"></div>
+          ${f.status === 'accepted' && currentRoomSlug ? `<button class="friend-action-btn" onclick="event.stopPropagation(); inviteToSquad('${f.id}')" title="Invite to squad">+</button>` : ''}
+        </div>
+      `).join('');
+    }
+
+    // ─── DM View ───
+    function openDm(friendId, friendUsername) {
+      const sorted = [currentState?.username || '', friendId].sort();
+      activeDm = { friendId, channelId: `dm:${sorted.join(':')}`, username: friendUsername };
+      document.getElementById('friends-list-view').style.display = 'none';
+      const dmView = document.getElementById('dm-view');
+      dmView.classList.add('active');
+      document.getElementById('dm-recipient').textContent = friendUsername;
+      // Set online dot
+      const friend = (currentState?.friends || []).find(f => f.id === friendId);
+      const dot = document.getElementById('dm-status-dot');
+      dot.className = friend?.is_online ? 'online-dot' : 'offline-dot';
+      renderDmMessages();
+      document.getElementById('dm-input').focus();
+    }
+
+    function closeDm() {
+      activeDm = null;
+      document.getElementById('dm-view').classList.remove('active');
+      document.getElementById('friends-list-view').style.display = '';
+    }
+
+    function renderDmMessages() {
+      if (!activeDm || !currentState) return;
+      const msgs = (currentState.dm_messages || {})[activeDm.channelId] || [];
+      const chat = document.getElementById('dm-chat');
+      if (msgs.length === 0) {
+        chat.innerHTML = '<div class="chat-empty">start a conversation</div>';
+        return;
+      }
+      const wasAtBottom = chat.scrollHeight - chat.scrollTop - chat.clientHeight < 30;
+      chat.innerHTML = msgs.slice(-30).map(m => `
+        <div class="msg">
+          <span class="time">${fmtTime(m.created_at)}</span>
+          <span class="author">${esc(m.username)}</span>
+          <span class="text">${esc(m.content)}</span>
+        </div>
+      `).join('');
+      if (wasAtBottom) chat.scrollTop = chat.scrollHeight;
+    }
+
+    async function sendDm() {
+      if (!activeDm) return;
+      const input = document.getElementById('dm-input');
+      const msg = input.value.trim();
+      if (!msg) return;
+      input.value = '';
+      await window.squads.sendDm(activeDm.friendId, msg);
+    }
+
+    document.getElementById('dm-input').addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendDm(); }
+      e.stopPropagation();
+    });
+
+    // ─── Squad Tab ───
+    function renderSquadTab(state) {
+      const hasRoom = !!state.room_slug;
+      document.getElementById('squad-content').style.display = hasRoom ? '' : 'none';
+      document.getElementById('no-room').style.display = hasRoom ? 'none' : '';
+      if (!hasRoom) return;
+
+      // Roster
+      const all = getMembers(state);
+      const roster = document.getElementById('roster');
+      roster.innerHTML = all.map(name => `
+        <div class="roster-item">
+          <img class="pic" src="https://github.com/${esc(name)}.png" onerror="this.style.display='none'" />
+          <div class="info">
+            <div class="name">${esc(name)}</div>
+            <div class="activity">${name === state.username ? 'you' : 'online'}</div>
+          </div>
+        </div>
+      `).join('');
+
+      if (state.last_activity) {
+        const a = state.last_activity;
+        const selfItem = roster.querySelector('.roster-item:first-child .activity');
+        if (selfItem) selfItem.textContent = `${a.action}${a.detail ? ' ' + a.detail : ''}`;
+      }
+
+      // Squad chat
+      const msgs = state.recent_messages || [];
+      const chat = document.getElementById('squad-chat');
+      if (msgs.length === 0) {
+        chat.innerHTML = '<div class="chat-empty">no messages yet</div>';
+      } else {
+        const wasAtBottom = chat.scrollHeight - chat.scrollTop - chat.clientHeight < 30;
+        chat.innerHTML = msgs.slice(-30).map(m => `
+          <div class="msg">
+            <span class="time">${fmtTime(m.created_at)}</span>
+            <span class="author">${esc(m.username)}</span>
+            <span class="text">${esc(m.content)}</span>
+          </div>
+        `).join('');
+        if (wasAtBottom) chat.scrollTop = chat.scrollHeight;
+      }
+    }
+
+    function sendSquadChat() {
+      const input = document.getElementById('squad-chat-input');
+      const msg = input.value.trim();
+      if (!msg) return;
+      // Add locally immediately
+      const chat = document.getElementById('squad-chat');
+      const empty = chat.querySelector('.chat-empty');
+      if (empty) empty.remove();
+      const div = document.createElement('div');
+      div.className = 'msg';
+      div.innerHTML = `<span class="time">${fmtTime(new Date().toISOString())}</span><span class="author">${esc(currentUsername)}</span><span class="text">${esc(msg)}</span>`;
+      chat.appendChild(div);
+      chat.scrollTop = chat.scrollHeight;
+      input.value = '';
+    }
+
+    document.getElementById('squad-chat-input').addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendSquadChat(); }
+      e.stopPropagation();
+    });
+
+    // ─── Settings ───
+    function saveSetting(key, value) { window.squads.saveSetting(key, value); }
+    function toggleBool(key, el) { saveSetting(key, el.classList.toggle('on')); }
+
+    function applySettings(s) {
+      document.body.classList.remove('theme-light', 'theme-terminal');
+      if (s.theme === 'light') document.body.classList.add('theme-light');
+      if (s.theme === 'terminal') document.body.classList.add('theme-terminal');
+      const themeEl = document.getElementById('s-theme');
+      if (themeEl) themeEl.value = s.theme || 'dark';
+      setToggle('s-ontop', s.always_on_top !== false);
+      setToggle('s-notif', s.notifications !== false);
+      if (typeof s.pos_x === 'number') posX = s.pos_x;
+      if (typeof s.pos_y === 'number') posY = s.pos_y;
+      applyPosition();
+    }
+
+    function setToggle(id, on) {
+      const el = document.getElementById(id);
+      if (el) el.classList.toggle('on', on);
+    }
+
+    window.squads.onSettingsUpdate(applySettings);
+
+    // ─── GitHub OAuth ───
+    function renderGitHub(username) {
+      const section = document.getElementById('gh-section');
+      if (username) {
+        section.innerHTML = `
+          <div class="gh-connected">
+            <img src="https://github.com/${esc(username)}.png" onerror="this.style.display='none'" />
+            <div>
+              <div class="gh-name">${esc(username)}</div>
+              <div class="gh-hint">Connected via GitHub</div>
+            </div>
+          </div>`;
+      } else {
+        section.innerHTML = `
+          <div class="gh-btn" id="gh-login-btn" onclick="triggerLogin()">
+            ${GH_SVG}<span>Connect GitHub</span>
+          </div>`;
+      }
+    }
+
+    async function triggerLogin() {
+      const btn = document.getElementById('gh-login-btn');
+      if (btn) btn.innerHTML = GH_SVG + '<span>Connecting...</span>';
+      const result = await window.squads.triggerLogin();
+      if (result.success) {
+        renderGitHub(result.username);
+      } else {
+        if (btn) btn.innerHTML = GH_SVG + '<span>Failed — try again</span>';
+        setTimeout(() => { if (btn) btn.innerHTML = GH_SVG + '<span>Connect GitHub</span>'; }, 2000);
+      }
+    }
+
+    // ─── State updates ───
+    window.squads.onStateUpdate((state) => {
+      if (!state) return;
+      currentState = state;
+      currentUsername = state.username || '';
+      currentRoomSlug = state.room_slug || '';
+      renderStrip(state);
+      renderFriends(state);
+      renderSquadTab(state);
+      renderGitHub(currentUsername);
+      if (activeDm) renderDmMessages();
+    });
+
+    function getMembers(state) {
+      const online = (state.online || []).filter(n => n !== state.username);
+      return [state.username || '', ...online];
+    }
+
+    function renderStrip(state) {
+      const all = getMembers(state);
+      const shown = all.slice(0, 3);
+      const overflow = all.length - 3;
+      stripEl.innerHTML = shown.map(name => `
+        <div class="avatar-card">
+          <img class="avatar-pic" src="https://github.com/${esc(name)}.png"
+               onerror="this.style.display='none'" />
+          <span class="avatar-name">${esc(name)}</span>
+        </div>
+      `).join('') + (overflow > 0 ? `<div class="overflow-text">+${overflow} more</div>` : '');
+    }
+
+    function esc(s) {
+      if (!s) return '';
+      const d = document.createElement('div');
+      d.textContent = s;
+      return d.innerHTML;
+    }
+
+    function fmtTime(iso) {
+      if (!iso) return '';
+      return new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    }
+  </script>
+</body>
+</html>
