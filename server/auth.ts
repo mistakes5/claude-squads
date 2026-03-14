@@ -103,6 +103,7 @@ router.get("/api/users/me", (req, res) => {
       id: payload.sub,
       github_username: payload.username,
       avatar_url: `https://github.com/${payload.username}.png`,
+      display_name: null,
     });
   } catch {
     res.status(401).json({ error: "Invalid token" });

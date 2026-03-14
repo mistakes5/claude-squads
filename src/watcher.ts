@@ -75,6 +75,8 @@ interface State {
     xp: number;
     tier: string;
     badge_count: number;
+    selected_border: string;
+    available_borders: { id: string; name: string; type: string; icon?: string }[];
   };
   // Per-user tier data from presence (username → tier info)
   user_tiers?: Record<string, { tier: string; xp: number }>;
@@ -137,72 +139,15 @@ function getDmChannelId(userId1: string, userId2: string): string {
   return `dm:${[userId1, userId2].sort().join(":")}`;
 }
 
-// ─── Mock data ───
-
-const MOCK_FRIENDS: FriendState[] = [
-  { id: "m1", github_username: "torvalds", avatar_url: null, status: "accepted", direction: "sent", is_online: true, tier: "mythic", xp: 9999, badge_count: 12 },
-  { id: "m2", github_username: "gaearon", avatar_url: null, status: "accepted", direction: "sent", is_online: true, tier: "diamond", xp: 3200, badge_count: 8 },
-  { id: "m3", github_username: "sindresorhus", avatar_url: null, status: "accepted", direction: "received", is_online: true, tier: "mythic", xp: 7500, badge_count: 11 },
-  { id: "m4", github_username: "tj", avatar_url: null, status: "accepted", direction: "sent", is_online: false, tier: "diamond", xp: 4100, badge_count: 9 },
-  { id: "m5", github_username: "mrdoob", avatar_url: null, status: "accepted", direction: "received", is_online: false, tier: "gold", xp: 1800, badge_count: 6 },
-  { id: "m6", github_username: "defunkt", avatar_url: null, status: "accepted", direction: "sent", is_online: true, tier: "mythic", xp: 8000, badge_count: 13 },
-  { id: "m7", github_username: "mojombo", avatar_url: null, status: "accepted", direction: "received", is_online: false, tier: "gold", xp: 1200, badge_count: 5 },
-  { id: "m8", github_username: "holman", avatar_url: null, status: "accepted", direction: "sent", is_online: false, tier: "silver", xp: 350, badge_count: 3 },
-  { id: "m9", github_username: "fat", avatar_url: null, status: "pending", direction: "received", is_online: true, tier: "gold", xp: 900, badge_count: 4 },
-  { id: "m10", github_username: "addyosmani", avatar_url: null, status: "pending", direction: "sent", is_online: false, tier: "diamond", xp: 2800, badge_count: 7 },
-  { id: "m11", github_username: "rauchg", avatar_url: null, status: "accepted", direction: "sent", is_online: true, tier: "diamond", xp: 3500, badge_count: 8 },
-  { id: "m12", github_username: "yyx990803", avatar_url: null, status: "accepted", direction: "received", is_online: false, tier: "mythic", xp: 6000, badge_count: 10 },
-];
-
 // ─── Main ───
 
 async function main() {
-  const isMock = process.env.SQUADS_MOCK === "1";
-
-  if (isMock) {
-    console.log("Running in MOCK mode — fake friends data, no server connection.");
-    const mockUsername = "testpilot";
-    const mockState: State = {
-      room_name: "The Ship Crew",
-      room_slug: "the-ship-crew",
-      online: ["torvalds", "gaearon", "sindresorhus", "defunkt", "rauchg"],
-      unread: 0,
-      username: mockUsername,
-      display_name: "Test Pilot",
-      avatar_url: "https://github.com/testpilot.png",
-      last_update: new Date().toISOString(),
-      server_connected: true,
-      recent_messages: [
-        { username: "torvalds", content: "just pushed a kernel patch", created_at: new Date(Date.now() - 60000).toISOString() },
-        { username: "gaearon", content: "nice! reviewing now", created_at: new Date(Date.now() - 30000).toISOString() },
-      ],
-      friends: MOCK_FRIENDS,
-      dm_messages: {
-        "dm:m1:self": [
-          { username: "torvalds", content: "hey, check out this commit", created_at: new Date(Date.now() - 120000).toISOString() },
-          { username: mockUsername, content: "looks great!", created_at: new Date(Date.now() - 90000).toISOString() },
-        ],
-      },
-      pending_invites: [
-        { from_username: "fat", room_slug: "debug-dungeon", room_name: "Debug Dungeon", timestamp: new Date().toISOString() },
-      ],
-      gamification: { xp: 1450, tier: "gold", badge_count: 6 },
-      user_tiers: {
-        testpilot: { tier: "gold", xp: 1450 },
-        torvalds: { tier: "mythic", xp: 9999 },
-        gaearon: { tier: "diamond", xp: 3200 },
-        sindresorhus: { tier: "mythic", xp: 7500 },
-        defunkt: { tier: "mythic", xp: 8000 },
-        rauchg: { tier: "diamond", xp: 3500 },
-      },
-    };
-    writeState(mockState);
-    console.log(`Mock state written to ${STATE_FILE}`);
-
-    setInterval(() => {
-      mockState.last_update = new Date().toISOString();
-      writeState(mockState);
-    }, 5000);
+  // Mock mode moved to separate script (scripts/mock-watcher.ts)
+  // to prevent accidental activation in packaged builds
+  if (process.env.SQUADS_MOCK === "1") {
+    console.log("Mock mode is no longer supported in the main watcher.");
+    console.log("Use: npx tsx scripts/mock-watcher.ts");
+    process.exit(0);
     return;
   }
 
@@ -233,7 +178,7 @@ async function main() {
   const dmMessages = new Map<string, RecentMessage[]>();
   let pendingInvites: Invite[] = [];
   const globalOnlineUsers = new Map<string, { username: string }>();
-  let myGamification: { xp: number; tier: string; badge_count: number } | undefined;
+  let myGamification: State["gamification"];
   const userTiers = new Map<string, { tier: string; xp: number }>();
   let serverConnected = false;
 
@@ -413,7 +358,13 @@ async function main() {
   async function fetchMyGamification() {
     try {
       const data = await apiFetch("/api/gamification/me");
-      myGamification = { xp: data.xp ?? 0, tier: data.tier ?? "bronze", badge_count: data.badge_count ?? 0 };
+      myGamification = {
+        xp: data.xp ?? 0,
+        tier: data.tier ?? "bronze",
+        badge_count: data.badge_count ?? 0,
+        selected_border: data.selected_border ?? "auto",
+        available_borders: data.available_borders ?? [],
+      };
       userTiers.set(username, { tier: myGamification.tier, xp: myGamification.xp });
       updateState();
     } catch {}

@@ -62,7 +62,8 @@ function spawnWatcher() {
     return;
   }
   // Don't spawn if not logged in — watcher will just crash with code 1
-  if (!existsSync(TOKEN_FILE)) {
+  // (unless in mock mode, which doesn't need a token)
+  if (!existsSync(TOKEN_FILE) && !process.env.SQUADS_MOCK) {
     console.log("Skipping watcher spawn: not logged in (no token.json)");
     return;
   }
@@ -77,8 +78,13 @@ function spawnWatcher() {
   // Use spawn with Electron's own executable as the Node runtime.
   // In packaged apps, fork() fails because there's no standalone node binary.
   // process.execPath points to the Electron binary which can run JS with --require.
+  // Strip SQUADS_MOCK from env so the watcher always runs in real mode
+  // when launched from the packaged app (mock is for dev CLI only)
+  const watcherEnv = { ...process.env, ELECTRON_RUN_AS_NODE: "1" };
+  delete watcherEnv.SQUADS_MOCK;
+
   const child = spawn(process.execPath, [watcherPath], {
-    env: { ...process.env, ELECTRON_RUN_AS_NODE: "1" },
+    env: watcherEnv,
     stdio: ["ignore", "pipe", "pipe"],
   });
   watcherProcess = child as unknown as ChildProcess;
@@ -308,6 +314,27 @@ app.whenReady().then(() => {
     }
   });
 
+  // ─── IPC: Update display name ───
+  ipcMain.handle("update-display-name", async (_e, name: string | null) => {
+    try {
+      const updated = await apiFetch("/api/users/me", {
+        method: "PATCH",
+        body: JSON.stringify({ display_name: name }),
+      });
+      // Update the stored token so the watcher picks it up
+      if (existsSync(TOKEN_FILE)) {
+        try {
+          const token = JSON.parse(readFileSync(TOKEN_FILE, "utf-8"));
+          token.user.display_name = updated.display_name ?? null;
+          writeFileSync(TOKEN_FILE, JSON.stringify(token, null, 2));
+        } catch {}
+      }
+      return { success: true, display_name: updated.display_name };
+    } catch (err: any) {
+      return { success: false, error: err.message };
+    }
+  });
+
   // ─── IPC: DM history ───
   ipcMain.handle("get-dm-history", async (_e, friendId: string) => {
     try {
@@ -348,6 +375,19 @@ app.whenReady().then(() => {
       saveSettings(settings);
       mainWindow?.webContents.send("settings-update", settings);
 
+      return { success: true };
+    } catch (err: any) {
+      return { success: false, error: err.message };
+    }
+  });
+
+  // ─── IPC: Select avatar border ───
+  ipcMain.handle("select-border", async (_e, borderId: string) => {
+    try {
+      await apiFetch("/api/gamification/border", {
+        method: "PUT",
+        body: JSON.stringify({ border_id: borderId }),
+      });
       return { success: true };
     } catch (err: any) {
       return { success: false, error: err.message };

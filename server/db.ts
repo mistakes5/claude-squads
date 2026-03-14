@@ -1,17 +1,27 @@
 import pg from "pg";
 
-const DATABASE_URL = process.env.DATABASE_URL;
+// Lazy pool — defers reading DATABASE_URL until the first query,
+// so dotenv.config() has time to run before we check the env var.
+let pool: pg.Pool | null = null;
+let poolInitialized = false;
 
-// Pool is lazy — only connects when a query is actually made
-const pool = DATABASE_URL
-  ? new pg.Pool({ connectionString: DATABASE_URL })
-  : null;
+function getPool(): pg.Pool | null {
+  if (!poolInitialized) {
+    poolInitialized = true;
+    const url = process.env.DATABASE_URL;
+    if (url) {
+      pool = new pg.Pool({ connectionString: url });
+    }
+  }
+  return pool;
+}
 
 export async function query(text: string, params?: unknown[]) {
-  if (!pool) {
+  const p = getPool();
+  if (!p) {
     throw new Error("DATABASE_URL not configured — database features unavailable");
   }
-  return pool.query(text, params);
+  return p.query(text, params);
 }
 
 export { pool };

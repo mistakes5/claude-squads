@@ -10,6 +10,7 @@
     "build": "tsup && tsup --config tsup.overlay.ts && cp src/overlay/overlay.html dist/overlay/",
     "build:overlay": "tsup --config tsup.overlay.ts && cp src/overlay/overlay.html dist/overlay/",
     "overlay": "pnpm build && npx electron dist/overlay/main.cjs",
+    "overlay:mock": "SQUADS_MOCK=1 pnpm overlay",
     "relaunch": "pkill -f 'electron dist/overlay' 2>/dev/null; sleep 0.5; pnpm overlay",
     "package": "pnpm build && electron-builder --mac --dir",
     "dev:tui": "tsx src/tui/cli.ts",

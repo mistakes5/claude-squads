@@ -73,11 +73,22 @@ async function loadDbRoutes() {
       pings.setPingsSocketServer(io);
     } catch {}
 
-    // Start gamification stats scheduler
+    // Load closed-source gamification plugin if available
     try {
-      const { startStatsScheduler } = await import("./services/stats-scheduler.js");
-      startStatsScheduler();
-    } catch {}
+      const { default: gamPlugin, init: gamInit } = await import("@squade/gamification");
+      const { query: dbQuery } = await import("./db.js");
+      gamInit(dbQuery);
+      const { registerGamificationPlugin } = await import("./gamification-plugin.js");
+      registerGamificationPlugin(gamPlugin);
+      gamPlugin.startScheduler();
+      console.log("✓ Gamification plugin loaded");
+    } catch {
+      // Fallback: try built-in stats scheduler (for development)
+      try {
+        const { startStatsScheduler } = await import("./services/stats-scheduler.js");
+        startStatsScheduler();
+      } catch {}
+    }
 
     const { setupSocketHandlers } = await import("./socket/index.js");
     setupSocketHandlers(io);

@@ -7,7 +7,9 @@ CREATE TABLE IF NOT EXISTS users (
   github_id text UNIQUE NOT NULL,
   github_username text NOT NULL,
   avatar_url text,
+  display_name text,
   github_token text,
+  selected_border text DEFAULT 'auto',
   created_at timestamptz DEFAULT now()
 );
 

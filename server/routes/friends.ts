@@ -31,7 +31,7 @@ router.get("/api/friends", async (req, res) => {
 
 // Send friend request
 router.post("/api/friends", async (req, res) => {
-  const { username } = req.body;
+  const username = req.body.username || req.body.github_username;
   if (!username) {
     res.status(400).json({ error: "username is required" });
     return;

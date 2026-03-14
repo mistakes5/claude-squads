@@ -6,3 +6,4 @@ release/
 *.tsbuildinfo
 *.dmg
 .DS_Store
+packages/gamification/

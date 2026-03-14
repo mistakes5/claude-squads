@@ -31,7 +31,13 @@ contextBridge.exposeInMainWorld("squads", {
   sendDm: (friendId: string, content: string) => ipcRenderer.invoke("send-dm", friendId, content),
   getDmHistory: (friendId: string) => ipcRenderer.invoke("get-dm-history", friendId),
 
+  // Profile
+  updateDisplayName: (name: string | null) => ipcRenderer.invoke("update-display-name", name),
+
   // Squad invites
   inviteToSquad: (friendId: string) => ipcRenderer.invoke("invite-to-squad", friendId),
   acceptInvite: (roomSlug: string) => ipcRenderer.invoke("accept-invite", roomSlug),
+
+  // Avatar border selection
+  selectBorder: (borderId: string) => ipcRenderer.invoke("select-border", borderId),
 });
