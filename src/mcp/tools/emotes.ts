@@ -1,5 +1,5 @@
 import { loadToken } from "../../shared/config.js";
-import { getActiveChannels } from "./presence.js";
+import { getSocket, getJoinedRooms } from "./_socket.js";
 
 /**
  * Claude-themed animated emotes — Clash Royale style.
@@ -25,11 +25,8 @@ export const EMOTES: Record<string, AnimatedEmote> = {
     frameMs: 140,
     description: "clawd waving hello",
     frames: [
-      // Pop in small
       { art: "      \n   ·  \n      " },
-      // Growing
       { art: "   ╭╮ \n   ╰╯ \n      " },
-      // Full size, neutral
       {
         art: [
           "  ╭━━━╮  ",
@@ -38,7 +35,6 @@ export const EMOTES: Record<string, AnimatedEmote> = {
           "  ╰━━━╯  ",
         ].join("\n"),
       },
-      // Hand up
       {
         art: [
           "  ╭━━━╮ ╱",
@@ -47,7 +43,6 @@ export const EMOTES: Record<string, AnimatedEmote> = {
           "  ╰━━━╯  ",
         ].join("\n"),
       },
-      // Hand over
       {
         art: [
           "  ╭━━━╮──",
@@ -56,7 +51,6 @@ export const EMOTES: Record<string, AnimatedEmote> = {
           "  ╰━━━╯  ",
         ].join("\n"),
       },
-      // Hand up again
       {
         art: [
           "  ╭━━━╮ ╱",
@@ -65,7 +59,6 @@ export const EMOTES: Record<string, AnimatedEmote> = {
           "  ╰━━━╯  ",
         ].join("\n"),
       },
-      // Hand over again
       {
         art: [
           "  ╭━━━╮──",
@@ -74,7 +67,6 @@ export const EMOTES: Record<string, AnimatedEmote> = {
           "  ╰━━━╯  ",
         ].join("\n"),
       },
-      // Settle
       {
         art: [
           "  ╭━━━╮  ",
@@ -86,7 +78,6 @@ export const EMOTES: Record<string, AnimatedEmote> = {
     ],
   },
 
-  // ── clawd-think: pops in, eyes go wide, thought bubbles appear ──
   "clawd-think": {
     frameMs: 180,
     description: "clawd thinking hard",
@@ -136,296 +127,83 @@ export const EMOTES: Record<string, AnimatedEmote> = {
     ],
   },
 
-  // ── clawd-ship: bounces in, rocket launches ──
   "clawd-ship": {
     frameMs: 120,
     description: "clawd shipping it",
     frames: [
       { art: "      \n   ·  \n      " },
       { art: "   ╭╮ \n   ╰╯ \n      " },
-      {
-        art: [
-          "  ╭━━━╮  ",
-          "  ┃ ▸▸┃  ",
-          "  ┃ ▽ ┃  ",
-          "  ╰━━━╯  ",
-        ].join("\n"),
-      },
-      {
-        art: [
-          "  ╭━━━╮  ",
-          "  ┃ ▸▸┃🚀",
-          "  ┃ ▽ ┃  ",
-          "  ╰━━━╯  ",
-        ].join("\n"),
-      },
-      {
-        art: [
-          "  ╭━━━╮🚀",
-          "  ┃ ▸▸┃  ",
-          "  ┃ △ ┃  ",
-          "  ╰━━━╯💨",
-        ].join("\n"),
-      },
-      {
-        art: [
-          " 🚀━━━╮  ",
-          "  ┃ ⊙⊙┃  ",
-          "  ┃ ◡ ┃  ",
-          "  ╰━━━╯💨",
-        ].join("\n"),
-      },
-      {
-        art: [
-          "  ╭━━━╮  ",
-          "  ┃ ◠◠┃  ",
-          "  ┃ ◡ ┃  ",
-          "  ╰━━━╯✨",
-        ].join("\n"),
-      },
+      { art: ["  ╭━━━╮  ", "  ┃ ▸▸┃  ", "  ┃ ▽ ┃  ", "  ╰━━━╯  "].join("\n") },
+      { art: ["  ╭━━━╮  ", "  ┃ ▸▸┃🚀", "  ┃ ▽ ┃  ", "  ╰━━━╯  "].join("\n") },
+      { art: ["  ╭━━━╮🚀", "  ┃ ▸▸┃  ", "  ┃ △ ┃  ", "  ╰━━━╯💨"].join("\n") },
+      { art: [" 🚀━━━╮  ", "  ┃ ⊙⊙┃  ", "  ┃ ◡ ┃  ", "  ╰━━━╯💨"].join("\n") },
+      { art: ["  ╭━━━╮  ", "  ┃ ◠◠┃  ", "  ┃ ◡ ┃  ", "  ╰━━━╯✨"].join("\n") },
     ],
   },
 
-  // ── clawd-vibe: bops side to side with music notes ──
   "clawd-vibe": {
     frameMs: 200,
     description: "clawd vibing",
     frames: [
       { art: "      \n   ·  \n      " },
-      {
-        art: [
-          "  ╭━━━╮  ",
-          "  ┃ ◠◠┃  ",
-          "  ┃ ◡ ┃  ",
-          "  ╰━━━╯  ",
-        ].join("\n"),
-      },
-      {
-        art: [
-          " ╭━━━╮ ♪ ",
-          " ┃ ◠◠┃   ",
-          " ┃ ◡ ┃   ",
-          " ╰━━━╯   ",
-        ].join("\n"),
-      },
-      {
-        art: [
-          "   ╭━━━╮ ",
-          "   ┃ ◠◠┃ ",
-          "   ┃ ◡ ┃ ",
-          "   ╰━━━╯ ",
-        ].join("\n"),
-      },
-      {
-        art: [
-          " ♫╭━━━╮  ",
-          "  ┃ ◠◠┃  ",
-          "  ┃ ◡ ┃  ",
-          "  ╰━━━╯  ",
-        ].join("\n"),
-      },
-      {
-        art: [
-          " ╭━━━╮ ♪ ",
-          " ┃ ◠◠┃   ",
-          " ┃ ◡ ┃   ",
-          " ╰━━━╯   ",
-        ].join("\n"),
-      },
-      {
-        art: [
-          "  ╭━━━╮♪ ",
-          " ♫┃ ◠◠┃  ",
-          "  ┃ ◡ ┃  ",
-          "  ╰━━━╯  ",
-        ].join("\n"),
-      },
+      { art: ["  ╭━━━╮  ", "  ┃ ◠◠┃  ", "  ┃ ◡ ┃  ", "  ╰━━━╯  "].join("\n") },
+      { art: [" ╭━━━╮ ♪ ", " ┃ ◠◠┃   ", " ┃ ◡ ┃   ", " ╰━━━╯   "].join("\n") },
+      { art: ["   ╭━━━╮ ", "   ┃ ◠◠┃ ", "   ┃ ◡ ┃ ", "   ╰━━━╯ "].join("\n") },
+      { art: [" ♫╭━━━╮  ", "  ┃ ◠◠┃  ", "  ┃ ◡ ┃  ", "  ╰━━━╯  "].join("\n") },
+      { art: [" ╭━━━╮ ♪ ", " ┃ ◠◠┃   ", " ┃ ◡ ┃   ", " ╰━━━╯   "].join("\n") },
+      { art: ["  ╭━━━╮♪ ", " ♫┃ ◠◠┃  ", "  ┃ ◡ ┃  ", "  ╰━━━╯  "].join("\n") },
     ],
   },
 
-  // ── clawd-fire: eyes go wide, flames appear ──
   "clawd-fire": {
     frameMs: 130,
     description: "clawd on fire",
     frames: [
       { art: "      \n   ·  \n      " },
-      {
-        art: [
-          "  ╭━━━╮  ",
-          "  ┃ ··┃  ",
-          "  ┃   ┃  ",
-          "  ╰━━━╯  ",
-        ].join("\n"),
-      },
-      {
-        art: [
-          "  ╭━━━╮  ",
-          "  ┃ ◉◉┃  ",
-          "  ┃ △ ┃  ",
-          "  ╰━━━╯  ",
-        ].join("\n"),
-      },
-      {
-        art: [
-          "  ╭━━━╮  ",
-          "  ┃ ⊙⊙┃🔥",
-          "  ┃ △ ┃  ",
-          "  ╰━━━╯  ",
-        ].join("\n"),
-      },
-      {
-        art: [
-          " 🔥╭━━━╮ ",
-          "  ┃ ⊙⊙┃🔥",
-          "  ┃ ◡ ┃  ",
-          " 🔥╰━━━╯ ",
-        ].join("\n"),
-      },
-      {
-        art: [
-          "🔥╭━━━╮🔥",
-          "  ┃ ⊙⊙┃  ",
-          " 🔥 ◡ 🔥 ",
-          "  ╰━━━╯  ",
-        ].join("\n"),
-      },
+      { art: ["  ╭━━━╮  ", "  ┃ ··┃  ", "  ┃   ┃  ", "  ╰━━━╯  "].join("\n") },
+      { art: ["  ╭━━━╮  ", "  ┃ ◉◉┃  ", "  ┃ △ ┃  ", "  ╰━━━╯  "].join("\n") },
+      { art: ["  ╭━━━╮  ", "  ┃ ⊙⊙┃🔥", "  ┃ △ ┃  ", "  ╰━━━╯  "].join("\n") },
+      { art: [" 🔥╭━━━╮ ", "  ┃ ⊙⊙┃🔥", "  ┃ ◡ ┃  ", " 🔥╰━━━╯ "].join("\n") },
+      { art: ["🔥╭━━━╮🔥", "  ┃ ⊙⊙┃  ", " 🔥 ◡ 🔥 ", "  ╰━━━╯  "].join("\n") },
     ],
   },
 
-  // ── clawd-sleep: eyes droop, zzz appears ──
   "clawd-sleep": {
     frameMs: 300,
     description: "clawd sleeping",
     frames: [
-      {
-        art: [
-          "  ╭━━━╮  ",
-          "  ┃ ◠◠┃  ",
-          "  ┃ ‿ ┃  ",
-          "  ╰━━━╯  ",
-        ].join("\n"),
-      },
-      {
-        art: [
-          "  ╭━━━╮  ",
-          "  ┃ ──┃  ",
-          "  ┃ ‿ ┃  ",
-          "  ╰━━━╯  ",
-        ].join("\n"),
-      },
-      {
-        art: [
-          "  ╭━━━╮  ",
-          "  ┃ ━━┃  ",
-          "  ┃ ‿ ┃z ",
-          "  ╰━━━╯  ",
-        ].join("\n"),
-      },
-      {
-        art: [
-          "  ╭━━━╮ z",
-          "  ┃ ━━┃z ",
-          "  ┃ ‿ ┃  ",
-          "  ╰━━━╯  ",
-        ].join("\n"),
-      },
-      {
-        art: [
-          "  ╭━━━╮zZ",
-          "  ┃ ━━┃  ",
-          "  ┃ ‿ ┃  ",
-          "  ╰━━━╯  ",
-        ].join("\n"),
-      },
+      { art: ["  ╭━━━╮  ", "  ┃ ◠◠┃  ", "  ┃ ‿ ┃  ", "  ╰━━━╯  "].join("\n") },
+      { art: ["  ╭━━━╮  ", "  ┃ ──┃  ", "  ┃ ‿ ┃  ", "  ╰━━━╯  "].join("\n") },
+      { art: ["  ╭━━━╮  ", "  ┃ ━━┃  ", "  ┃ ‿ ┃z ", "  ╰━━━╯  "].join("\n") },
+      { art: ["  ╭━━━╮ z", "  ┃ ━━┃z ", "  ┃ ‿ ┃  ", "  ╰━━━╯  "].join("\n") },
+      { art: ["  ╭━━━╮zZ", "  ┃ ━━┃  ", "  ┃ ‿ ┃  ", "  ╰━━━╯  "].join("\n") },
     ],
   },
 
-  // ── clawd-bug: shock, then finds bug ──
   "clawd-bug": {
     frameMs: 160,
     description: "clawd found a bug",
     frames: [
       { art: "      \n   ·  \n      " },
-      {
-        art: [
-          "  ╭━━━╮  ",
-          "  ┃ ◠◠┃  ",
-          "  ┃ ‿ ┃  ",
-          "  ╰━━━╯  ",
-        ].join("\n"),
-      },
-      {
-        art: [
-          "  ╭━━━╮  ",
-          "  ┃ ◠◠┃  ",
-          "  ┃ ‿ ┃ ·",
-          "  ╰━━━╯  ",
-        ].join("\n"),
-      },
-      {
-        art: [
-          "  ╭━━━╮! ",
-          "  ┃ ⊗⊗┃  ",
-          "  ┃ △ ┃🪲 ",
-          "  ╰━━━╯  ",
-        ].join("\n"),
-      },
-      {
-        art: [
-          "  ╭━━━╮  ",
-          "  ┃ ⊗⊗┃  ",
-          "  ┃ ▿ ┃🪲 ",
-          "  ╰━━━╯  ",
-        ].join("\n"),
-      },
+      { art: ["  ╭━━━╮  ", "  ┃ ◠◠┃  ", "  ┃ ‿ ┃  ", "  ╰━━━╯  "].join("\n") },
+      { art: ["  ╭━━━╮  ", "  ┃ ◠◠┃  ", "  ┃ ‿ ┃ ·", "  ╰━━━╯  "].join("\n") },
+      { art: ["  ╭━━━╮! ", "  ┃ ⊗⊗┃  ", "  ┃ △ ┃🪲 ", "  ╰━━━╯  "].join("\n") },
+      { art: ["  ╭━━━╮  ", "  ┃ ⊗⊗┃  ", "  ┃ ▿ ┃🪲 ", "  ╰━━━╯  "].join("\n") },
     ],
   },
 
-  // ── clawd-lgtm: thumbs up with sparkle ──
   "clawd-lgtm": {
     frameMs: 140,
     description: "clawd approves",
     frames: [
       { art: "      \n   ·  \n      " },
-      {
-        art: [
-          "  ╭━━━╮  ",
-          "  ┃ ◠◠┃  ",
-          "  ┃ ‿ ┃  ",
-          "  ╰━━━╯  ",
-        ].join("\n"),
-      },
-      {
-        art: [
-          "  ╭━━━╮  ",
-          "  ┃ ◠◠┃  ",
-          "  ┃ ◡ ┃  ",
-          "  ╰━┳━╯  ",
-          "    ┃    ",
-        ].join("\n"),
-      },
-      {
-        art: [
-          "  ╭━━━╮  ",
-          "  ┃ ◠◠┃  ",
-          "  ┃ ◡ ┃  ",
-          "  ╰━┳━╯  ",
-          "    ┃👍  ",
-        ].join("\n"),
-      },
-      {
-        art: [
-          "  ╭━━━╮  ",
-          "  ┃ ◠◠┃  ",
-          "  ┃ ◡ ┃  ",
-          "  ╰━┳━╯✨",
-          "   ✨👍  ",
-        ].join("\n"),
-      },
+      { art: ["  ╭━━━╮  ", "  ┃ ◠◠┃  ", "  ┃ ‿ ┃  ", "  ╰━━━╯  "].join("\n") },
+      { art: ["  ╭━━━╮  ", "  ┃ ◠◠┃  ", "  ┃ ◡ ┃  ", "  ╰━┳━╯  ", "    ┃    "].join("\n") },
+      { art: ["  ╭━━━╮  ", "  ┃ ◠◠┃  ", "  ┃ ◡ ┃  ", "  ╰━┳━╯  ", "    ┃👍  "].join("\n") },
+      { art: ["  ╭━━━╮  ", "  ┃ ◠◠┃  ", "  ┃ ◡ ┃  ", "  ╰━┳━╯✨", "   ✨👍  "].join("\n") },
     ],
   },
 
-  // ── Quick reactions (single frame with pop-in) ──────
   gg: {
     frameMs: 140,
     description: "good game",
@@ -461,8 +239,7 @@ export const EMOTES: Record<string, AnimatedEmote> = {
 };
 
 /**
- * Send an emote to the current room via broadcast.
- * Sends all frames so the receiving TUI can animate them.
+ * Send an emote to the current room via Socket.io.
  */
 export async function sendEmote(
   roomSlug: string,
@@ -477,24 +254,17 @@ export async function sendEmote(
     throw new Error(`Unknown emote "${emoteName}". Available: ${available}`);
   }
 
-  const channel = getActiveChannels().get(roomSlug);
-  if (!channel) throw new Error(`Not in room "${roomSlug}". Join first.`);
+  if (!getJoinedRooms().has(roomSlug)) {
+    throw new Error(`Not in room "${roomSlug}". Join first.`);
+  }
 
-  const lastFrame = emote.frames[emote.frames.length - 1];
-
-  await channel.send({
-    type: "broadcast",
-    event: "emote",
-    payload: {
-      github_username: token.user.github_username,
-      emote_name: emoteName,
-      emote: `\n${lastFrame.art}\n(${emote.description})`,
-      frames: emote.frames.map((f) => f.art),
-      frameMs: emote.frameMs,
-      timestamp: new Date().toISOString(),
-    },
+  const socket = getSocket();
+  socket.emit("send-emote", {
+    slug: roomSlug,
+    emote: emoteName,
   });
 
+  const lastFrame = emote.frames[emote.frames.length - 1];
   return `${lastFrame.art}\n(${emote.description})`;
 }
 

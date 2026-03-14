@@ -54,13 +54,3 @@ export function saveSettings(settings: SquadsSettings) {
   ensureDir();
   writeFileSync(SETTINGS_PATH, JSON.stringify(settings, null, 2));
 }
-
-/** @deprecated Pending migration to Express server */
-export function getSupabaseConfig(): { supabaseUrl: string; supabaseAnonKey: string } {
-  const supabaseUrl = process.env.SUPABASE_URL ?? "";
-  const supabaseAnonKey = process.env.SUPABASE_ANON_KEY ?? "";
-  if (!supabaseUrl || !supabaseAnonKey) {
-    console.warn("Supabase not configured — pending migration to Express server");
-  }
-  return { supabaseUrl, supabaseAnonKey };
-}

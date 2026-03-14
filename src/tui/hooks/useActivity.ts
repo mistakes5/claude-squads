@@ -1,5 +1,5 @@
-import { useState, useEffect, useRef } from "react";
-import type { RealtimeChannel } from "@supabase/supabase-js";
+import { useState, useEffect } from "react";
+import type { Socket } from "socket.io-client";
 
 interface ActivityEvent {
   github_username: string;
@@ -8,36 +8,30 @@ interface ActivityEvent {
   timestamp: string;
 }
 
-export function useActivity(channel: RealtimeChannel | null) {
+export function useActivity(socket: Socket | null) {
   const [activities, setActivities] = useState<ActivityEvent[]>([]);
-  const handlerRef = useRef<((args: { payload: unknown }) => void) | null>(null);
-  const prevChannelRef = useRef<RealtimeChannel | null>(null);
 
   useEffect(() => {
-    // Clean up previous listener if channel changed
-    if (prevChannelRef.current && handlerRef.current) {
-      prevChannelRef.current.unsubscribe();
-    }
+    if (!socket) return;
 
-    if (!channel) {
-      prevChannelRef.current = null;
-      handlerRef.current = null;
-      return;
-    }
-
-    const handler = ({ payload }: { payload: unknown }) => {
-      setActivities((prev) => [...prev.slice(-49), payload as ActivityEvent]);
+    const handler = (payload: any) => {
+      setActivities((prev) => [
+        ...prev.slice(-49),
+        {
+          github_username: payload.username || payload.github_username,
+          action: payload.action,
+          detail: payload.detail || null,
+          timestamp: payload.timestamp || new Date().toISOString(),
+        },
+      ]);
     };
 
-    channel.on("broadcast", { event: "activity" }, handler);
-    handlerRef.current = handler;
-    prevChannelRef.current = channel;
+    socket.on("activity", handler);
 
     return () => {
-      // Channel cleanup is handled by usePresence which owns the channel lifecycle
-      handlerRef.current = null;
+      socket.off("activity", handler);
     };
-  }, [channel]);
+  }, [socket]);
 
   return { activities };
 }

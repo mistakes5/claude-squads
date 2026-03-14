@@ -1,17 +1,20 @@
+import { apiFetch } from "../../shared/api-client.js";
 import type { Message } from "../../shared/types.js";
 
-const MIGRATION_ERROR = "Not yet migrated to Express server";
-
 export async function sendMessage(
-  _roomSlug: string,
-  _content: string
+  roomSlug: string,
+  content: string
 ): Promise<{ username: string; content: string }> {
-  throw new Error(MIGRATION_ERROR);
+  const msg = await apiFetch(`/api/rooms/${encodeURIComponent(roomSlug)}/messages`, {
+    method: "POST",
+    body: JSON.stringify({ content }),
+  });
+  return { username: msg.github_username, content: msg.content };
 }
 
 export async function getMessages(
-  _roomSlug: string,
+  roomSlug: string,
   _limit: number = 20
 ): Promise<Message[]> {
-  throw new Error(MIGRATION_ERROR);
+  return apiFetch(`/api/rooms/${encodeURIComponent(roomSlug)}/messages`);
 }

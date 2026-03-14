@@ -1,72 +1,60 @@
 import { useState, useEffect, useCallback } from "react";
-import type { SupabaseClient } from "@supabase/supabase-js";
+import type { Socket } from "socket.io-client";
 import type { Message } from "../../shared/types.js";
+import { apiFetch } from "../../shared/api-client.js";
 
-export function useMessages(supabase: SupabaseClient, roomId: string | null) {
+export function useMessages(socket: Socket, roomSlug: string | null) {
   const [messages, setMessages] = useState<Message[]>([]);
 
-  // Fetch initial messages
+  // Fetch initial messages via REST
   useEffect(() => {
-    if (!roomId) return;
+    if (!roomSlug) return;
 
-    supabase
-      .from("messages")
-      .select("*, users(*)")
-      .eq("room_id", roomId)
-      .order("created_at", { ascending: false })
-      .limit(50)
-      .then(({ data }) => {
-        if (data) setMessages(data.reverse());
-      });
-  }, [roomId]);
+    apiFetch(`/api/rooms/${encodeURIComponent(roomSlug)}/messages`)
+      .then((data) => {
+        if (data) setMessages(data);
+      })
+      .catch((err) => console.error("Failed to fetch messages:", err.message));
+  }, [roomSlug]);
 
-  // Subscribe to new messages
+  // Listen for new messages via Socket.io
   useEffect(() => {
-    if (!roomId) return;
+    if (!roomSlug) return;
 
-    const channel = supabase
-      .channel(`messages:${roomId}`)
-      .on(
-        "postgres_changes",
-        {
-          event: "INSERT",
-          schema: "public",
-          table: "messages",
-          filter: `room_id=eq.${roomId}`,
+    const handler = (msg: any) => {
+      const message: Message = {
+        id: msg.id || `${Date.now()}`,
+        room_id: msg.room_id || "",
+        user_id: msg.user_id || "",
+        content: msg.content,
+        created_at: msg.created_at || new Date().toISOString(),
+        users: {
+          id: msg.user_id || "",
+          github_id: "",
+          github_username: msg.github_username,
+          avatar_url: msg.avatar_url || null,
+          created_at: "",
         },
-        async (payload) => {
-          // Fetch the full message with user data
-          const { data } = await supabase
-            .from("messages")
-            .select("*, users(*)")
-            .eq("id", payload.new.id)
-            .single();
+      };
+      setMessages((prev) => [...prev.slice(-99), message]);
+    };
 
-          if (data) {
-            setMessages((prev) => [...prev.slice(-99), data]);
-          }
-        }
-      )
-      .subscribe();
+    socket.on("new-message", handler);
 
     return () => {
-      channel.unsubscribe();
+      socket.off("new-message", handler);
     };
-  }, [roomId]);
+  }, [roomSlug, socket]);
 
   const sendMessage = useCallback(
     async (content: string) => {
-      if (!roomId) return;
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
-      if (!user) return;
-
-      await supabase
-        .from("messages")
-        .insert({ room_id: roomId, user_id: user.id, content });
+      if (!roomSlug) return;
+      await apiFetch(`/api/rooms/${encodeURIComponent(roomSlug)}/messages`, {
+        method: "POST",
+        body: JSON.stringify({ content }),
+      });
     },
-    [roomId]
+    [roomSlug]
   );
 
   return { messages, sendMessage };

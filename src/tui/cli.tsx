@@ -1,11 +1,10 @@
 import React from "react";
 import { render } from "ink";
-import { createClient } from "@supabase/supabase-js";
+import { io as ioClient } from "socket.io-client";
 
 import { App } from "./app.js";
-import { loadToken, loadSettings, getSupabaseConfig } from "../shared/config.js";
+import { loadToken, loadSettings, getServerUrl } from "../shared/config.js";
 import { login } from "../shared/auth.js";
-import type { StoredToken } from "../shared/types.js";
 
 async function main() {
   // Load env from .env file if present
@@ -33,22 +32,18 @@ async function main() {
     }
   }
 
-  const { supabaseUrl, supabaseAnonKey } = getSupabaseConfig();
   const settings = loadSettings();
 
-  const supabase = createClient(supabaseUrl, supabaseAnonKey, {
-    auth: { persistSession: false, autoRefreshToken: false },
-  });
-
-  // Set the session from stored token
-  await supabase.auth.setSession({
-    access_token: token.access_token,
-    refresh_token: token.refresh_token,
+  // Connect to server via Socket.io
+  const socket = ioClient(getServerUrl(), {
+    auth: { token: token.access_token },
+    reconnection: true,
+    reconnectionDelay: 2000,
   });
 
   render(
     <App
-      supabase={supabase}
+      socket={socket}
       token={token}
       initialMode={settings.overlay_mode}
     />

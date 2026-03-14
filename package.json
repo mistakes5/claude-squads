@@ -50,7 +50,6 @@
   "license": "MIT",
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.27.1",
-    "@supabase/supabase-js": "^2.99.1",
     "cors": "^2.8.6",
     "dotenv": "^16.4.7",
     "express": "^5.2.1",

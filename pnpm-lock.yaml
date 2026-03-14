@@ -11,9 +11,6 @@ importers:
       '@modelcontextprotocol/sdk':
         specifier: ^1.27.1
         version: 1.27.1(zod@4.3.6)
-      '@supabase/supabase-js':
-        specifier: ^2.99.1
-        version: 2.99.1
       cors:
         specifier: ^2.8.6
         version: 2.8.6
@@ -616,30 +613,6 @@ packages:
   '@standard-schema/spec@1.1.0':
     resolution: {integrity: sha512-l2aFy5jALhniG5HgqrD6jXLi/rUWrKvqN/qJx6yoJsgKhblVd+iqqU4RCXavm/jPityDo5TCvKMnpjKnOriy0w==}
 
-  '@supabase/auth-js@2.99.1':
-    resolution: {integrity: sha512-x7lKKTvKjABJt/FYcRSPiTT01Xhm2FF8RhfL8+RHMkmlwmRQ88/lREupIHKwFPW0W6pTCJqkZb7Yhpw/EZ+fNw==}
-    engines: {node: '>=20.0.0'}
-
-  '@supabase/functions-js@2.99.1':
-    resolution: {integrity: sha512-WQE62W5geYImCO4jzFxCk/avnK7JmOdtqu2eiPz3zOaNiIJajNRSAwMMDgEGd2EMs+sUVYj1LfBjfmW3EzHgIA==}
-    engines: {node: '>=20.0.0'}
-
-  '@supabase/postgrest-js@2.99.1':
-    resolution: {integrity: sha512-gtw2ibJrADvfqrpUWXGNlrYUvxttF4WVWfPpTFKOb2IRj7B6YRWMDgcrYqIuD4ZEabK4m6YKQCCGy6clgf1lPA==}
-    engines: {node: '>=20.0.0'}
-
-  '@supabase/realtime-js@2.99.1':
-    resolution: {integrity: sha512-9EDdy/5wOseGFqxW88ShV9JMRhm7f+9JGY5x+LqT8c7R0X1CTLwg5qie8FiBWcXTZ+68yYxVWunI+7W4FhkWOg==}
-    engines: {node: '>=20.0.0'}
-
-  '@supabase/storage-js@2.99.1':
-    resolution: {integrity: sha512-mf7zPfqofI62SOoyQJeNUVxe72E4rQsbWim6lTDPeLu3lHija/cP5utlQADGrjeTgOUN6znx/rWn7SjrETP1dw==}
-    engines: {node: '>=20.0.0'}
-
-  '@supabase/supabase-js@2.99.1':
-    resolution: {integrity: sha512-5MRoYD9ffXq8F6a036dm65YoSHisC3by/d22mauKE99Vrwf792KxYIIr/iqCX7E4hkuugbPZ5EGYHTB7MKy6Vg==}
-    engines: {node: '>=20.0.0'}
-
   '@szmarczak/http-timer@4.0.6':
     resolution: {integrity: sha512-4BAffykYOgO+5nzBWYwE3W90sBgLJoUPRWWcL8wlyiM8IB8ipJz3UMJ9KXQd1RKQXpKp8Tutn80HZtWsu2u76w==}
     engines: {node: '>=10'}
@@ -703,9 +676,6 @@ packages:
 
   '@types/pg@8.18.0':
     resolution: {integrity: sha512-gT+oueVQkqnj6ajGJXblFR4iavIXWsGAFCk3dP4Kki5+a9R4NMt0JARdk6s8cUKcfUoqP5dAtDSLU8xYUTFV+Q==}
-
-  '@types/phoenix@1.6.7':
-    resolution: {integrity: sha512-oN9ive//QSBkf19rfDv45M7eZPi0eEXylht2OLEXicu5b4KoQ1OzXIw+xDSGWxSxe1JmepRR/ZH283vsu518/Q==}
 
   '@types/plist@3.0.5':
     resolution: {integrity: sha512-E6OCaRmAe4WDmWNsL/9RMqdkkzDCY1etutkflWk4c+AcjDU07Pcz1fQwTX0TQz+Pxqn9i4L1TU3UFpjnrcDgxA==}
@@ -1536,10 +1506,6 @@ packages:
   https-proxy-agent@7.0.6:
     resolution: {integrity: sha512-vK9P5/iUfdl95AI+JVyUuIcVtd4ofvtrOr3HNtM2yxC9bnMbEdp3x01OhQNnjb8IJYi38VlTE3mBXwcfvywuSw==}
     engines: {node: '>= 14'}
-
-  iceberg-js@0.8.1:
-    resolution: {integrity: sha512-1dhVQZXhcHje7798IVM+xoo/1ZdVfzOMIc8/rgVSijRK38EDqOJoGula9N/8ZI5RD8QTxNQtK/Gozpr+qUqRRA==}
-    engines: {node: '>=20.0.0'}
 
   iconv-corefoundation@1.1.7:
     resolution: {integrity: sha512-T10qvkw0zz4wnm560lOEg0PovVqUXuOFhhHAkixw8/sycy7TJt7v/RrkEKEQnAw2viPSJu6iAkErxnzR0g8PpQ==}
@@ -3305,44 +3271,6 @@ snapshots:
 
   '@standard-schema/spec@1.1.0': {}
 
-  '@supabase/auth-js@2.99.1':
-    dependencies:
-      tslib: 2.8.1
-
-  '@supabase/functions-js@2.99.1':
-    dependencies:
-      tslib: 2.8.1
-
-  '@supabase/postgrest-js@2.99.1':
-    dependencies:
-      tslib: 2.8.1
-
-  '@supabase/realtime-js@2.99.1':
-    dependencies:
-      '@types/phoenix': 1.6.7
-      '@types/ws': 8.18.1
-      tslib: 2.8.1
-      ws: 8.19.0
-    transitivePeerDependencies:
-      - bufferutil
-      - utf-8-validate
-
-  '@supabase/storage-js@2.99.1':
-    dependencies:
-      iceberg-js: 0.8.1
-      tslib: 2.8.1
-
-  '@supabase/supabase-js@2.99.1':
-    dependencies:
-      '@supabase/auth-js': 2.99.1
-      '@supabase/functions-js': 2.99.1
-      '@supabase/postgrest-js': 2.99.1
-      '@supabase/realtime-js': 2.99.1
-      '@supabase/storage-js': 2.99.1
-    transitivePeerDependencies:
-      - bufferutil
-      - utf-8-validate
-
   '@szmarczak/http-timer@4.0.6':
     dependencies:
       defer-to-connect: 2.0.1
@@ -3430,8 +3358,6 @@ snapshots:
       '@types/node': 25.5.0
       pg-protocol: 1.13.0
       pg-types: 2.2.0
-
-  '@types/phoenix@1.6.7': {}
 
   '@types/plist@3.0.5':
     dependencies:
@@ -4454,8 +4380,6 @@ snapshots:
       debug: 4.4.3
     transitivePeerDependencies:
       - supports-color
-
-  iceberg-js@0.8.1: {}
 
   iconv-corefoundation@1.1.7:
     dependencies:
@@ -5527,7 +5451,8 @@ snapshots:
 
   ts-interface-checker@0.1.13: {}
 
-  tslib@2.8.1: {}
+  tslib@2.8.1:
+    optional: true
 
   tsup@8.5.1(jiti@2.6.1)(postcss@8.5.8)(tsx@4.21.0)(typescript@5.9.3):
     dependencies:

@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from "react";
 import { Box, Text, useApp, useInput } from "ink";
-import type { SupabaseClient } from "@supabase/supabase-js";
+import type { Socket } from "socket.io-client";
 import { claude } from "./theme.js";
 
 import { StatusBar } from "./components/StatusBar.js";
@@ -16,17 +16,18 @@ import { useMessages } from "./hooks/useMessages.js";
 import { useActivity } from "./hooks/useActivity.js";
 import { usePings } from "./hooks/usePings.js";
 
+import { apiFetch } from "../shared/api-client.js";
 import type { Room, OverlayMode, StoredToken } from "../shared/types.js";
 
 type Panel = "friends" | "chat" | "rooms";
 
 interface Props {
-  supabase: SupabaseClient;
+  socket: Socket;
   token: StoredToken;
   initialMode: OverlayMode;
 }
 
-export function App({ supabase, token, initialMode }: Props) {
+export function App({ socket, token, initialMode }: Props) {
   const { exit } = useApp();
 
   const [currentRoom, setCurrentRoom] = useState<Room | null>(null);
@@ -39,17 +40,17 @@ export function App({ supabase, token, initialMode }: Props) {
   const [activeEmote, setActiveEmote] = useState<any>(null);
 
   // Hooks
-  const { members, updatePresence, channel } = usePresence(
-    supabase,
+  const { members, updatePresence } = usePresence(
+    socket,
     currentRoom?.slug ?? null,
     token.user.id
   );
   const { messages, sendMessage } = useMessages(
-    supabase,
-    currentRoom?.id ?? null
+    socket,
+    currentRoom?.slug ?? null
   );
-  const { activities } = useActivity(channel);
-  const { latestPing } = usePings(supabase, token.user.id);
+  const { activities } = useActivity(socket);
+  const { latestPing } = usePings(socket, token.user.id);
 
   // Set username in presence when we join
   useEffect(() => {
@@ -62,24 +63,13 @@ export function App({ supabase, token, initialMode }: Props) {
     }
   }, [currentRoom?.slug]);
 
-  // Fetch rooms on mount
+  // Fetch rooms on mount via REST
   useEffect(() => {
-    supabase
-      .from("rooms")
-      .select("*, room_members(count)")
-      .eq("is_public", true)
-      .order("created_at", { ascending: false })
-      .limit(20)
-      .then(({ data }) => {
-        if (data) {
-          setRooms(
-            data.map((r: any) => ({
-              ...r,
-              member_count: r.room_members?.[0]?.count ?? 0,
-            }))
-          );
-        }
-      });
+    apiFetch("/api/rooms")
+      .then((data) => {
+        if (data) setRooms(data);
+      })
+      .catch((err) => console.error("Failed to fetch rooms:", err.message));
   }, []);
 
   // Show notifications for new messages in notification mode
@@ -106,77 +96,64 @@ export function App({ supabase, token, initialMode }: Props) {
         message: `🏓 ${latestPing.from_username}: ${latestPing.message}`,
         type: "info" as const,
       });
-      // Force overlay visible for pings
       setOverlayVisible(true);
     }
   }, [latestPing]);
 
-  // Handle emote broadcasts from the room channel — play animation
+  // Handle emote broadcasts from Socket.io
   useEffect(() => {
-    if (!channel) return;
+    if (!socket) return;
 
-    const handler = ({ payload }: { payload: any }) => {
+    const handler = (payload: any) => {
       if (payload.frames) {
         setActiveEmote(payload);
       } else {
         setNotification({
-          id: `emote-${payload.timestamp}`,
-          message: `${payload.github_username} ${payload.emote}`,
+          id: `emote-${payload.timestamp || Date.now()}`,
+          message: `${payload.username} ${payload.emote}`,
           type: "activity" as const,
         });
       }
       setOverlayVisible(true);
     };
 
-    channel.on("broadcast", { event: "emote" }, handler);
+    socket.on("emote", handler);
 
-    // Cleanup: channel lifecycle is managed by usePresence,
-    // but we track the handler ref to avoid stacking listeners
     return () => {
-      // Supabase JS v2 removes listeners when channel is unsubscribed
-      // No explicit .off() needed since usePresence unsubscribes the channel
+      socket.off("emote", handler);
     };
-  }, [channel]);
+  }, [socket]);
 
   const joinRoom = useCallback(
     async (slug: string) => {
-      const { data: room } = await supabase
-        .from("rooms")
-        .select()
-        .eq("slug", slug)
-        .single();
-
-      if (room) {
-        const {
-          data: { user },
-        } = await supabase.auth.getUser();
-        if (user) {
-          await supabase
-            .from("room_members")
-            .upsert({ room_id: room.id, user_id: user.id });
+      try {
+        await apiFetch(`/api/rooms/${encodeURIComponent(slug)}/join`, {
+          method: "POST",
+        });
+        const room = await apiFetch(`/api/rooms/${encodeURIComponent(slug)}`);
+        if (room) {
+          setCurrentRoom(room);
+          setActivePanel("friends");
         }
-        setCurrentRoom(room);
-        setActivePanel("friends");
+      } catch (err: any) {
+        console.error("Failed to join room:", err.message);
       }
     },
-    [supabase]
+    []
   );
 
   // Keyboard navigation
   useInput((input, key) => {
-    // Toggle overlay
     if (input === "s" && key.ctrl) {
       setOverlayVisible((v) => !v);
       return;
     }
 
-    // Quit
     if (input === "q" && key.ctrl) {
       exit();
       return;
     }
 
-    // Tab between panels
     if (key.tab) {
       setActivePanel((p) => {
         if (p === "friends") return "chat";
@@ -186,7 +163,6 @@ export function App({ supabase, token, initialMode }: Props) {
       return;
     }
 
-    // Room list navigation (when rooms panel is active)
     if (activePanel === "rooms") {
       if (key.upArrow) {
         setRoomIndex((i) => Math.max(0, i - 1));
@@ -198,12 +174,10 @@ export function App({ supabase, token, initialMode }: Props) {
     }
   });
 
-  // In notification mode, only show the notification popup
   if (mode === "notifications" && !overlayVisible) {
     return null;
   }
 
-  // Toggle mode: hidden state
   if (mode === "toggle" && !overlayVisible) {
     return (
       <Box paddingX={1}>
@@ -226,7 +200,6 @@ export function App({ supabase, token, initialMode }: Props) {
       />
 
       <Box flexDirection="row" minHeight={15}>
-        {/* Left: Friends + Activity */}
         <Box flexDirection="column" width="40%">
           <FriendsTab
             members={members}
@@ -235,7 +208,6 @@ export function App({ supabase, token, initialMode }: Props) {
           <ActivityFeed activities={activities} />
         </Box>
 
-        {/* Right: Chat or Room List */}
         <Box flexDirection="column" width="60%">
           {activePanel === "rooms" ? (
             <RoomList

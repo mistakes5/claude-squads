@@ -3,17 +3,16 @@
  * Squads Setup Script
  *
  * Walks you through:
- * 1. Creating a Supabase project (opens browser)
- * 2. Configuring env vars
- * 3. Running the database migration
- * 4. Enabling GitHub OAuth
+ * 1. Setting up PostgreSQL
+ * 2. Running the database schema
+ * 3. Creating a GitHub OAuth App
+ * 4. Configuring env vars
  * 5. Testing the connection
  */
 
 import { createInterface } from "readline";
-import { writeFileSync, existsSync, readFileSync } from "fs";
+import { writeFileSync, readFileSync } from "fs";
 import { join } from "path";
-import { createClient } from "@supabase/supabase-js";
 
 const rl = createInterface({ input: process.stdin, output: process.stdout });
 const ask = (q: string): Promise<string> =>
@@ -59,100 +58,94 @@ ${c.accent}${c.bold}
   ╰━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╯
 ${c.reset}`);
 
-  // ─── Step 1: Supabase Project ─────────────────────────
-  header("Step 1: Create a Supabase Project");
-  step(1, "Go to https://supabase.com/dashboard/new");
-  step(2, 'Create a free project (any name, e.g. "squads")');
-  step(3, "Wait for it to finish provisioning (~1 min)");
-  step(4, "Go to Project Settings → API");
+  // ─── Step 1: PostgreSQL ───────────────────────────────
+  header("Step 1: Set Up PostgreSQL");
+  step(1, "Install PostgreSQL if you haven't:");
+  info("macOS: brew install postgresql@16 && brew services start postgresql@16");
+  info("Linux: sudo apt install postgresql && sudo systemctl start postgresql");
+  step(2, 'Create a database:');
+  info('createdb squads');
   console.log();
 
-  const supabaseUrl = (await ask(`${c.peach}  Paste your Project URL: ${c.reset}`)).trim();
-  const supabaseKey = (await ask(`${c.peach}  Paste your anon/public key: ${c.reset}`)).trim();
+  const databaseUrl = (
+    await ask(`${c.peach}  Paste your DATABASE_URL (or press Enter for default): ${c.reset}`)
+  ).trim() || "postgresql://localhost:5432/squads";
 
-  if (!supabaseUrl || !supabaseKey) {
-    console.error("\n  Missing URL or key. Please try again.");
+  success(`Database URL: ${databaseUrl}`);
+
+  // ─── Step 2: Run Schema ─────────────────────────────
+  header("Step 2: Run Database Schema");
+  const schemaPath = join(ROOT, "server", "schema.sql");
+  step(1, `Run the schema:`);
+  info(`psql "${databaseUrl}" < ${schemaPath}`);
+  console.log();
+
+  await ask(`${c.peach}  Press Enter when schema is applied...${c.reset}`);
+  success("Schema applied");
+
+  // ─── Step 3: GitHub OAuth App ───────────────────────
+  header("Step 3: Create a GitHub OAuth App");
+  step(1, "Go to https://github.com/settings/developers");
+  step(2, 'Click "New OAuth App"');
+  step(3, "Fill in:");
+  info("App name: Squade Code");
+  info("Homepage URL: http://localhost:3000");
+  info("Authorization callback URL: http://localhost:3000/auth/github/callback");
+  step(4, "Copy the Client ID and generate a Client Secret");
+  console.log();
+
+  const githubClientId = (await ask(`${c.peach}  GitHub Client ID: ${c.reset}`)).trim();
+  const githubClientSecret = (await ask(`${c.peach}  GitHub Client Secret: ${c.reset}`)).trim();
+
+  if (!githubClientId || !githubClientSecret) {
+    console.error("\n  Missing GitHub credentials. Please try again.");
     process.exit(1);
   }
 
-  // Save .env
-  writeFileSync(ENV_PATH, `SUPABASE_URL=${supabaseUrl}\nSUPABASE_ANON_KEY=${supabaseKey}\n`);
-  success("Saved .env file");
+  // ─── Step 4: Generate JWT Secret & Save .env ────────
+  header("Step 4: Saving Configuration");
 
-  // ─── Step 2: Run Migration ────────────────────────────
-  header("Step 2: Running Database Migration");
+  const jwtSecret = Array.from(
+    { length: 48 },
+    () => "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"[
+      Math.floor(Math.random() * 62)
+    ]
+  ).join("");
 
-  const supabase = createClient(supabaseUrl, supabaseKey);
+  const envContent = `# Server
+DATABASE_URL=${databaseUrl}
+GITHUB_CLIENT_ID=${githubClientId}
+GITHUB_CLIENT_SECRET=${githubClientSecret}
+JWT_SECRET=${jwtSecret}
+PORT=3000
 
-  // Read migration files
-  const migrationsDir = join(ROOT, "supabase", "migrations");
-  const migrationFiles = ["001_initial_schema.sql", "002_pings.sql"];
+# Client
+SQUADS_SERVER_URL=http://localhost:3000
+`;
 
-  for (const file of migrationFiles) {
-    const path = join(migrationsDir, file);
-    if (!existsSync(path)) {
-      console.error(`  Migration file not found: ${path}`);
-      continue;
-    }
+  writeFileSync(ENV_PATH, envContent);
+  success("Saved .env file with generated JWT secret");
 
-    const sql = readFileSync(path, "utf-8");
-    info(`Running ${file}...`);
-
-    // We can't run raw SQL via the client library directly.
-    // User needs to paste it into the SQL editor.
-    console.log(`\n${c.dim}  The migration needs to be run in the Supabase SQL Editor.${c.reset}`);
-  }
-
-  step(1, "Go to your Supabase dashboard → SQL Editor");
-  step(2, "Click 'New Query'");
-  step(3, `Paste the contents of:`);
-  info(`${migrationsDir}/001_initial_schema.sql`);
-  info(`${migrationsDir}/002_pings.sql`);
-  step(4, "Click 'Run' for each");
+  // ─── Step 5: Test Connection ────────────────────────
+  header("Step 5: Testing Connection");
+  step(1, "Start the server:");
+  info("pnpm server:dev");
+  step(2, "In another terminal, test:");
+  info("curl http://localhost:3000/health");
   console.log();
 
-  await ask(`${c.peach}  Press Enter when migrations are done...${c.reset}`);
-  success("Migrations applied");
-
-  // ─── Step 3: Enable GitHub OAuth ──────────────────────
-  header("Step 3: Enable GitHub OAuth");
-  step(1, "Go to Supabase dashboard → Authentication → Providers");
-  step(2, "Find 'GitHub' and enable it");
-  step(3, "You'll need a GitHub OAuth App:");
-  info("Go to https://github.com/settings/developers");
-  info('Click "New OAuth App"');
-  info(`App name: Squads`);
-  info(`Homepage URL: ${supabaseUrl}`);
-  info(`Authorization callback URL: ${supabaseUrl}/auth/v1/callback`);
-  step(4, "Copy the Client ID and Client Secret into Supabase");
-  console.log();
-
-  await ask(`${c.peach}  Press Enter when GitHub OAuth is configured...${c.reset}`);
-  success("GitHub OAuth configured");
-
-  // ─── Step 4: Test Connection ──────────────────────────
-  header("Step 4: Testing Connection");
-
-  try {
-    const { data, error } = await supabase.from("rooms").select("count").limit(1);
-    if (error) throw error;
-    success("Connected to Supabase successfully!");
-  } catch (err: any) {
-    console.error(`\n  Connection test failed: ${err.message}`);
-    info("This might be because RLS is blocking unauthenticated reads.");
-    info("That's actually correct! Auth is required to access data.");
-    success("Connection established (RLS is working correctly)");
-  }
-
-  // ─── Done ─────────────────────────────────────────────
+  // ─── Done ───────────────────────────────────────────
   console.log(`
 ${c.accent}${c.bold}
   ╭━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╮
   ┃       ✦ ALL SET! ✦          ┃
   ╰━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╯
 ${c.reset}
+  ${c.peach}To start the server:${c.reset}
+    pnpm server:dev
+
   ${c.peach}To launch the overlay:${c.reset}
-    node dist/squads.js
+    pnpm overlay
 
   ${c.peach}To add the MCP server to Claude Code:${c.reset}
     Add to ~/.claude.json or .mcp.json:
@@ -161,8 +154,7 @@ ${c.reset}
       "command": "node",
       "args": ["${ROOT}/dist/mcp-server.js"],
       "env": {
-        "SUPABASE_URL": "${supabaseUrl}",
-        "SUPABASE_ANON_KEY": "${supabaseKey}"
+        "SQUADS_SERVER_URL": "http://localhost:3000"
       }
     }${c.reset}
 

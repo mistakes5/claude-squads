@@ -1,64 +1,51 @@
-import { useState, useEffect, useCallback, useRef } from "react";
-import type { SupabaseClient, RealtimeChannel } from "@supabase/supabase-js";
+import { useState, useEffect, useCallback } from "react";
+import type { Socket } from "socket.io-client";
 import type { PresenceState } from "../../shared/types.js";
 
-export function usePresence(supabase: SupabaseClient, roomSlug: string | null, userId: string) {
+export function usePresence(socket: Socket, roomSlug: string | null, _userId: string) {
   const [members, setMembers] = useState<PresenceState[]>([]);
-  const [channel, setChannel] = useState<RealtimeChannel | null>(null);
-  const channelRef = useRef<RealtimeChannel | null>(null);
 
   useEffect(() => {
     if (!roomSlug) {
-      setChannel(null);
-      channelRef.current = null;
+      setMembers([]);
       return;
     }
 
-    const ch = supabase.channel(`room:${roomSlug}`, {
-      config: { presence: { key: userId } },
-    });
+    // Join room via Socket.io
+    socket.emit("join-room", { slug: roomSlug });
 
-    ch.on("presence", { event: "sync" }, () => {
-      const state = ch.presenceState<PresenceState>();
-      const all = Object.values(state).flatMap((p) => p);
-      setMembers(all);
-    });
-
-    ch.subscribe(async (status) => {
-      if (status === "SUBSCRIBED") {
-        await ch.track({
-          github_username: "",
-          avatar_url: null,
-          status: "online",
-          current_file: null,
+    const handlePresenceSync = ({ slug, members: m }: { slug: string; members: any[] }) => {
+      if (slug !== roomSlug) return;
+      setMembers(
+        m.map((p) => ({
+          github_username: p.username,
+          avatar_url: p.avatar_url || null,
+          status: p.status || "online",
+          current_file: p.current_file || null,
           online_at: new Date().toISOString(),
-        } satisfies PresenceState);
-      }
-    });
+        }))
+      );
+    };
 
-    setChannel(ch);
-    channelRef.current = ch;
+    socket.on("room-presence-sync", handlePresenceSync);
 
     return () => {
-      ch.untrack();
-      ch.unsubscribe();
-      channelRef.current = null;
+      socket.emit("leave-room", { slug: roomSlug });
+      socket.off("room-presence-sync", handlePresenceSync);
     };
-  }, [roomSlug, userId]);
+  }, [roomSlug, socket]);
 
-  const updatePresence = useCallback(async (state: Partial<PresenceState>) => {
-    const ch = channelRef.current;
-    if (!ch) return;
+  const updatePresence = useCallback(
+    (state: Partial<PresenceState>) => {
+      if (!roomSlug) return;
+      socket.emit("set-status", {
+        slug: roomSlug,
+        status: state.status,
+        currentFile: state.current_file,
+      });
+    },
+    [roomSlug, socket]
+  );
 
-    await ch.track({
-      github_username: "",
-      avatar_url: null,
-      status: "online",
-      current_file: null,
-      online_at: new Date().toISOString(),
-      ...state,
-    } as PresenceState);
-  }, []);
-
-  return { members, updatePresence, channel };
+  return { members, updatePresence, socket };
 }
