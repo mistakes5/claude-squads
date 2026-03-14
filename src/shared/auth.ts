@@ -1,10 +1,13 @@
 import { createServer } from "http";
 import { getSupabase, resetClient } from "./supabase.js";
-import { saveToken, clearToken, getSupabaseConfig } from "./config.js";
+import { saveToken, clearToken } from "./config.js";
 import type { StoredToken } from "./types.js";
 
 const CALLBACK_PORT = 54321;
 const CALLBACK_URL = `http://localhost:${CALLBACK_PORT}/callback`;
+
+// Track the active callback server so we can tear it down
+let activeServer: ReturnType<typeof createServer> | null = null;
 
 /**
  * Opens the browser for GitHub OAuth and waits for the callback.
@@ -35,9 +38,21 @@ export async function login(): Promise<StoredToken["user"]> {
 }
 
 function waitForCallback(): Promise<StoredToken> {
+  // Kill any lingering server from a previous attempt
+  if (activeServer) {
+    try { activeServer.close(); } catch {}
+    activeServer = null;
+  }
+
   return new Promise((resolve, reject) => {
+    const cleanup = () => {
+      clearTimeout(timeout);
+      if (activeServer === server) activeServer = null;
+      try { server.close(); } catch {}
+    };
+
     const timeout = setTimeout(() => {
-      server.close();
+      cleanup();
       reject(new Error("Login timed out after 120 seconds"));
     }, 120_000);
 
@@ -50,7 +65,6 @@ function waitForCallback(): Promise<StoredToken> {
         return;
       }
 
-      // Extract the code from the callback
       const code = url.searchParams.get("code");
       if (!code) {
         res.writeHead(400);
@@ -76,7 +90,6 @@ function waitForCallback(): Promise<StoredToken> {
           null;
         const avatarUrl = data.user.user_metadata?.avatar_url ?? null;
 
-        // Upsert user in our users table
         await supabase.from("users").upsert(
           {
             id: data.user.id,
@@ -100,7 +113,7 @@ function waitForCallback(): Promise<StoredToken> {
         };
 
         saveToken(token);
-        resetClient(); // Reset so next getSupabase() uses new token
+        resetClient();
 
         res.writeHead(200, { "Content-Type": "text/html" });
         res.end(`
@@ -114,25 +127,44 @@ function waitForCallback(): Promise<StoredToken> {
           </html>
         `);
 
-        clearTimeout(timeout);
-        server.close();
+        cleanup();
         resolve(token);
       } catch (err) {
         res.writeHead(500);
         res.end("Auth failed");
-        clearTimeout(timeout);
-        server.close();
+        cleanup();
         reject(err);
       }
     });
 
-    server.listen(CALLBACK_PORT, () => {
-      // Server ready, browser will redirect here
+    // Handle port-in-use gracefully instead of crashing
+    server.on("error", (err: NodeJS.ErrnoException) => {
+      cleanup();
+      if (err.code === "EADDRINUSE") {
+        reject(new Error("Login already in progress — please wait or restart the app"));
+      } else {
+        reject(err);
+      }
     });
+
+    activeServer = server;
+    server.listen(CALLBACK_PORT);
   });
 }
 
 export function logout() {
+  closeActiveServer();
   clearToken();
   resetClient();
+}
+
+/**
+ * Closes the active OAuth callback server if one is running.
+ * Useful for cleanup on app quit or when cancelling an in-progress login.
+ */
+export function closeActiveServer() {
+  if (activeServer) {
+    try { activeServer.close(); } catch {}
+    activeServer = null;
+  }
 }

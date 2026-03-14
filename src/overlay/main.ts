@@ -33,6 +33,7 @@ try {
 const SQUADS_DIR = join(homedir(), ".squads");
 const STATE_FILE = join(SQUADS_DIR, "state.json");
 const SETTINGS_FILE = join(SQUADS_DIR, "settings.json");
+const TOKEN_FILE = join(SQUADS_DIR, "token.json");
 
 function readSettings(): any {
   if (!existsSync(SETTINGS_FILE)) return {};
@@ -56,9 +57,19 @@ function spawnWatcher() {
     console.warn("Watcher not found at", watcherPath);
     return;
   }
+  // Don't spawn if not logged in — watcher will just crash with code 1
+  if (!existsSync(TOKEN_FILE)) {
+    console.log("Skipping watcher spawn: not logged in (no token.json)");
+    return;
+  }
   if (watcherProcess) {
     watcherProcess.kill("SIGTERM");
-    watcherProcess = null;
+    // Wait briefly for old process to exit before spawning new one
+    setTimeout(() => {
+      watcherProcess = null;
+      spawnWatcher();
+    }, 500);
+    return;
   }
   watcherProcess = fork(watcherPath, [], {
     env: { ...process.env },
@@ -69,7 +80,9 @@ function spawnWatcher() {
   watcherProcess.on("exit", (code) => {
     console.log(`Watcher exited with code ${code}`);
     watcherProcess = null;
-    if (watcherShouldRestart && code !== 0) {
+    // code 1 = "not logged in" — don't restart, wait for login
+    // Only auto-restart on unexpected crashes (code > 1)
+    if (watcherShouldRestart && code !== null && code > 1) {
       setTimeout(spawnWatcher, 3000);
     }
   });
@@ -173,6 +186,9 @@ app.on("second-instance", () => {
 });
 
 app.whenReady().then(() => {
+  // Ensure dock icon is visible (macOS)
+  if (app.dock) app.dock.show();
+
   createWindow();
 
   // Spawn watcher daemon as child process

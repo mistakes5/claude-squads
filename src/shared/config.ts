@@ -1,4 +1,4 @@
-import { readFileSync, writeFileSync, existsSync, mkdirSync } from "fs";
+import { readFileSync, writeFileSync, existsSync, mkdirSync, unlinkSync } from "fs";
 import { join } from "path";
 import { homedir } from "os";
 import type { StoredToken, SquadsSettings } from "./types.js";
@@ -40,7 +40,7 @@ export function saveToken(token: StoredToken) {
 
 export function clearToken() {
   if (existsSync(TOKEN_PATH)) {
-    writeFileSync(TOKEN_PATH, "");
+    try { unlinkSync(TOKEN_PATH); } catch {}
   }
 }
 

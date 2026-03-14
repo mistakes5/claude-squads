@@ -172,7 +172,7 @@
     }
 
     .friends-list {
-      flex: 1; overflow-y: auto;
+      flex: 1; overflow-y: auto; min-height: 0;
       scrollbar-width: thin; scrollbar-color: var(--scrollbar) transparent;
     }
     .friends-list::-webkit-scrollbar { width: 3px; }
@@ -377,8 +377,8 @@
                    placeholder="GitHub username..." autocomplete="off" />
             <button class="add-friend-btn" onclick="addFriend()">Add</button>
           </div>
-          <div id="invites-area"></div>
-          <div id="pending-area"></div>
+          <div id="invites-area" style="flex-shrink:0;"></div>
+          <div id="pending-area" style="flex-shrink:0;"></div>
           <div class="friends-list" id="friends-list"></div>
         </div>
 
@@ -882,7 +882,7 @@
         currentUsername = '';
         currentRoomSlug = '';
         renderGitHub(null);
-        stripEl.innerHTML = '';
+        renderStrip(null);
         document.getElementById('friends-list').innerHTML = '<div class="chat-empty">connect GitHub to get started</div>';
       }
     }
@@ -905,7 +905,31 @@
       return [state.username || '', ...online];
     }
 
+    const MASCOT_SVG = `<svg viewBox="0 0 959 744" width="24" height="19" xmlns="http://www.w3.org/2000/svg">
+      <path d="M880 744L816 743V582L804 570 709 568 696 577 692 592 702 604V743L638 744V600L642 585 634 572 625 568H412L342 568 333 572 326 581V594L334 603 333 744 266 743V588L255 574 244 568H163L154 572 146 581V591L154 603V743L92 744 96 368 88 356 79 352 0 345V197L81 192 94 183 96 155 92 48 100 33V0H866V38L872 48V174L890 192 958 197V345L884 354 874 361 872 368V592L880 603Z" fill="#CC7C5F"/>
+      <path d="M162 288L160 287V280L165 248 226 230 230 228 234 220 160 192V156L274 202V238Z" fill="#000"/>
+      <path d="M807 292L694 244V238L702 202 807 156V192L734 214 730 223V226L806 252 808 253Z" fill="#000"/>
+    </svg>`;
+
     function renderStrip(state) {
+      if (!state || !state.username) {
+        stripEl.innerHTML = `
+          <div class="avatar-card" style="
+            background: var(--surface);
+            border: 1px solid var(--border);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            border-radius: 10px;
+            padding: 6px 12px 6px 10px;
+            gap: 8px;
+            flex-direction: row;
+            cursor: pointer;
+          ">
+            ${MASCOT_SVG}
+            <span class="avatar-name" style="font-size:12px;font-weight:600;color:var(--text);">Squade Code</span>
+          </div>`;
+        return;
+      }
       const all = getMembers(state);
       const shown = all.slice(0, 3);
       const overflow = all.length - 3;
@@ -929,6 +953,10 @@
       if (!iso) return '';
       return new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
     }
+
+    // ─── Initial render (before any state-update arrives) ───
+    renderStrip(null);
+    renderGitHub(null);
   </script>
 </body>
 </html>
