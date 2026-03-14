@@ -40,6 +40,7 @@ interface RecentMessage {
 interface FriendState {
   id: string;
   github_username: string;
+  display_name?: string | null;
   avatar_url: string | null;
   status: "pending" | "accepted";
   direction: "sent" | "received";
@@ -188,7 +189,7 @@ async function main() {
   let friends: FriendState[] = [];
   const dmMessages = new Map<string, RecentMessage[]>();
   let pendingInvites: Invite[] = [];
-  const globalOnlineUsers = new Map<string, { username: string }>();
+  const globalOnlineUsers = new Map<string, { username: string; display_name?: string | null }>();
   let myGamification: State["gamification"];
   const userTiers = new Map<string, { tier: string; xp: number }>();
   let serverConnected = false;
@@ -250,10 +251,10 @@ async function main() {
   });
 
   // ─── Lobby presence ───
-  socket.on("presence-update", ({ online }: { online: Array<{ id: string; username: string }> }) => {
+  socket.on("presence-update", ({ online }: { online: Array<{ id: string; username: string; display_name?: string | null }> }) => {
     globalOnlineUsers.clear();
     for (const u of online) {
-      globalOnlineUsers.set(u.id, { username: u.username });
+      globalOnlineUsers.set(u.id, { username: u.username, display_name: u.display_name });
     }
     // Update friends' online status
     for (const f of friends) {
@@ -299,8 +300,8 @@ async function main() {
   socket.on("room-presence-sync", ({ slug, members }: { slug: string; members: any[] }) => {
     if (slug !== currentRoomSlug) return;
     onlineUsers = members
-      .map((m: any) => m.username)
-      .filter((n: string) => n && n !== username);
+      .map((m: any) => m.display_name || m.username)
+      .filter((n: string) => n && n !== username && n !== displayName);
     // Extract tier data from presence
     for (const m of members) {
       if (m.username && m.tier) {
@@ -349,6 +350,7 @@ async function main() {
         result.push({
           id: row.friend_id,
           github_username: row.github_username,
+          display_name: row.display_name || null,
           avatar_url: row.avatar_url || null,
           status: row.status as "pending" | "accepted",
           direction: row.direction === "outgoing" ? "sent" : "received",

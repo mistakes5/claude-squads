@@ -7,6 +7,7 @@ import { registerInviteHandlers } from "./invites.js";
 export interface PresenceInfo {
   id: string;
   username: string;
+  display_name?: string | null;
   avatar_url?: string;
   status?: string;
   current_file?: string | null;
@@ -39,7 +40,7 @@ export function updateTierCache(userId: string, tier: string, xp: number) {
   tierCache.set(userId, { tier, xp });
 }
 
-const onlineUsers = new Map<string, { id: string; username: string }>();
+const onlineUsers = new Map<string, { id: string; username: string; display_name?: string | null }>();
 
 // Per-room presence: roomSlug → Map<userId, PresenceInfo>
 export const roomPresence = new Map<string, Map<string, PresenceInfo>>();
@@ -94,10 +95,21 @@ export function setupSocketHandlers(io: SocketServer) {
         sub: string;
         username: string;
       };
-      (socket as unknown as { user: { id: string; username: string } }).user = {
+      (socket as unknown as { user: { id: string; username: string; display_name?: string | null } }).user = {
         id: payload.sub,
         username: payload.username,
+        display_name: null,
       };
+      // Resolve display_name + real UUID from DB (async, non-blocking)
+      import("../db.js").then(({ query }) =>
+        query(`SELECT id, display_name FROM users WHERE github_id = $1 OR id::text = $1`, [payload.sub])
+      ).then((result) => {
+        if (result.rows.length > 0) {
+          const u = (socket as any).user;
+          u.id = result.rows[0].id;
+          u.display_name = result.rows[0].display_name || null;
+        }
+      }).catch(() => {});
       next();
     } catch {
       next(new Error("Invalid or expired token"));
@@ -105,17 +117,24 @@ export function setupSocketHandlers(io: SocketServer) {
   });
 
   io.on("connection", (socket) => {
-    const user = (socket as unknown as { user: { id: string; username: string } }).user;
+    const user = (socket as unknown as { user: { id: string; username: string; display_name?: string | null } }).user;
 
     // Join personal room and lobby
     socket.join(`user:${user.id}`);
     socket.join("lobby");
 
-    // Track online status
-    onlineUsers.set(user.id, { id: user.id, username: user.username });
+    // Track online status (display_name may be resolved async, update after short delay)
+    onlineUsers.set(user.id, { id: user.id, username: user.username, display_name: user.display_name });
     io.to("lobby").emit("presence-update", {
       online: Array.from(onlineUsers.values()),
     });
+    // Re-emit after DB lookup completes (display_name may have updated)
+    setTimeout(() => {
+      onlineUsers.set(user.id, { id: user.id, username: user.username, display_name: user.display_name });
+      io.to("lobby").emit("presence-update", {
+        online: Array.from(onlineUsers.values()),
+      });
+    }, 1000);
 
     // Track socket's joined rooms for disconnect cleanup
     socketRooms.set(socket.id, new Set());

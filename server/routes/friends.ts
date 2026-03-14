@@ -15,6 +15,7 @@ router.get("/api/friends", async (req, res) => {
          CASE WHEN f.user_id = $1 THEN 'outgoing' ELSE 'incoming' END AS direction,
          u.id AS friend_id,
          u.github_username,
+         u.display_name,
          u.avatar_url
        FROM friends f
        JOIN users u ON u.id = CASE WHEN f.user_id = $1 THEN f.friend_id ELSE f.user_id END

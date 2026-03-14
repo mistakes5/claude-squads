@@ -899,21 +899,23 @@
         pendingArea.innerHTML = `
           <div class="pending-section">
             <div class="pending-label">Friend Requests</div>
-            ${pending.map(f => `
+            ${pending.map(f => {
+              const fname = f.display_name || f.github_username;
+              return `
               <div class="friend-item ${tierClass(f.github_username)}">
                 <div class="pic-wrap">
                   <img class="pic" src="${f.avatar_url || `https://github.com/${esc(f.github_username)}.png`}" onerror="this.style.display='none'" style="width:28px;height:28px;border-radius:7px;" />
                   ${badgeHtml(f.github_username)}
                 </div>
                 <div class="info">
-                  <div class="name">${esc(f.github_username)}</div>
-                  <div class="status-text" style="color:var(--text-muted)">wants to be friends</div>
+                  <div class="name">${esc(fname)}</div>
+                  <div class="status-text" style="color:var(--text-muted)">${fname !== f.github_username ? `@${esc(f.github_username)} · ` : ''}wants to be friends</div>
                 </div>
                 <div class="friend-actions">
                   <button class="friend-action-btn accept" onclick="acceptFriend('${esc(f.github_username)}')">Accept</button>
                 </div>
-              </div>
-            `).join('')}
+              </div>`;
+            }).join('')}
           </div>`;
       } else {
         pendingArea.innerHTML = '';
@@ -943,14 +945,17 @@
       list.innerHTML = all.map(f => {
         const tier = f.tier || getTier(f.github_username);
         const tc = tier ? `tier-${tier}` : '';
+        const fname = f.display_name || f.github_username;
+        const showSub = f.display_name && f.display_name !== f.github_username;
         return `
-        <div class="friend-item ${tc}" onclick="openDm('${f.id}', '${esc(f.github_username)}')">
+        <div class="friend-item ${tc}" onclick="openDm('${f.id}', '${esc(fname)}')">
           <div class="pic-wrap">
             <img class="pic" src="${f.avatar_url || `https://github.com/${esc(f.github_username)}.png`}" onerror="this.style.display='none'" style="width:28px;height:28px;border-radius:7px;" />
             ${badgeHtml(f.github_username)}
           </div>
           <div class="info">
-            <div class="name">${esc(f.github_username)}${tier ? ` <span class="tier-label ${tier}">${tier}</span>` : ''}</div>
+            <div class="name">${esc(fname)}${tier ? ` <span class="tier-label ${tier}">${tier}</span>` : ''}</div>
+            ${showSub ? `<div class="status-text" style="opacity:0.5;font-size:10px;">@${esc(f.github_username)}</div>` : ''}
             <div class="status-text ${f.is_online ? 'online' : 'offline'}">${
               f.status === 'pending' ? 'request sent' : (f.is_online ? 'online' : 'offline')
             }</div>
