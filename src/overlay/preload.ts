@@ -29,6 +29,7 @@ contextBridge.exposeInMainWorld("squads", {
 
   // DMs
   sendDm: (friendId: string, content: string) => ipcRenderer.invoke("send-dm", friendId, content),
+  getDmHistory: (friendId: string) => ipcRenderer.invoke("get-dm-history", friendId),
 
   // Squad invites
   inviteToSquad: (friendId: string) => ipcRenderer.invoke("invite-to-squad", friendId),

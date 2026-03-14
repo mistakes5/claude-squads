@@ -59,12 +59,12 @@ router.get("/auth/github/callback", async (req, res) => {
     let userId = String(ghUser.id);
     try {
       const result = await query(
-        `INSERT INTO users (github_id, github_username, avatar_url)
-         VALUES ($1, $2, $3)
+        `INSERT INTO users (github_id, github_username, avatar_url, github_token)
+         VALUES ($1, $2, $3, $4)
          ON CONFLICT (github_id)
-         DO UPDATE SET github_username = EXCLUDED.github_username, avatar_url = EXCLUDED.avatar_url
+         DO UPDATE SET github_username = EXCLUDED.github_username, avatar_url = EXCLUDED.avatar_url, github_token = EXCLUDED.github_token
          RETURNING id, github_username`,
-        [String(ghUser.id), ghUser.login, ghUser.avatar_url],
+        [String(ghUser.id), ghUser.login, ghUser.avatar_url, tokenData.access_token],
       );
       userId = result.rows[0].id;
     } catch (dbErr) {

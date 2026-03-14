@@ -20,6 +20,18 @@ function getServerUrl(): string {
  */
 export async function login(): Promise<StoredToken["user"]> {
   const serverUrl = getServerUrl();
+
+  // Health check — fail fast if server is unreachable
+  try {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 5000);
+    const healthRes = await fetch(`${serverUrl}/health`, { signal: controller.signal });
+    clearTimeout(timer);
+    if (!healthRes.ok) throw new Error("non-200");
+  } catch {
+    throw new Error("Server unreachable — try again later");
+  }
+
   const authUrl = `${serverUrl}/auth/github`;
 
   // Open browser to our server's GitHub OAuth endpoint

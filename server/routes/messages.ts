@@ -78,7 +78,7 @@ router.post("/api/rooms/:slug/messages", async (req, res) => {
   }
 });
 
-// Send a DM to a friend (ephemeral — broadcast only, not persisted)
+// Send a DM to a friend (persisted to direct_messages table)
 router.post("/api/messages", async (req, res) => {
   const { friend_id, content } = req.body;
   if (!friend_id || !content) {
@@ -87,13 +87,31 @@ router.post("/api/messages", async (req, res) => {
   }
 
   try {
+    // Persist the DM
+    await query(
+      `INSERT INTO direct_messages (sender_id, recipient_id, content)
+       VALUES ($1, $2, $3)`,
+      [req.user!.id, friend_id, content],
+    );
+
+    const timestamp = new Date().toISOString();
+
     // Emit DM via Socket.io to the friend's personal room
     if (io) {
       io.to(`user:${friend_id}`).emit("dm", {
         from: req.user!.id,
         fromUsername: req.user!.username,
         content,
-        timestamp: new Date().toISOString(),
+        timestamp,
+      });
+
+      // Echo DM back to sender for cross-device sync
+      io.to(`user:${req.user!.id}`).emit("dm", {
+        from: req.user!.id,
+        fromUsername: req.user!.username,
+        content,
+        timestamp,
+        isSelf: true,
       });
     }
 
@@ -101,6 +119,30 @@ router.post("/api/messages", async (req, res) => {
   } catch (err) {
     console.error("Error sending DM:", err);
     res.status(500).json({ error: "Failed to send DM" });
+  }
+});
+
+// Get DM history with a friend (last 50 messages)
+router.get("/api/messages/dm/:friendId", async (req, res) => {
+  const { friendId } = req.params;
+  const userId = req.user!.id;
+
+  try {
+    const result = await query(
+      `SELECT dm.id, dm.sender_id, dm.recipient_id, dm.content, dm.created_at,
+              u.github_username
+       FROM direct_messages dm
+       JOIN users u ON dm.sender_id = u.id
+       WHERE (dm.sender_id = $1 AND dm.recipient_id = $2)
+          OR (dm.sender_id = $2 AND dm.recipient_id = $1)
+       ORDER BY dm.created_at ASC
+       LIMIT 50`,
+      [userId, friendId],
+    );
+    res.json(result.rows);
+  } catch (err) {
+    console.error("Error fetching DM history:", err);
+    res.status(500).json({ error: "Failed to fetch DM history" });
   }
 });
 

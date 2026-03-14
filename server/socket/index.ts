@@ -10,6 +10,33 @@ export interface PresenceInfo {
   avatar_url?: string;
   status?: string;
   current_file?: string | null;
+  tier?: string;
+  xp?: number;
+}
+
+// In-memory tier cache: userId → { tier, xp }
+const tierCache = new Map<string, { tier: string; xp: number }>();
+
+export async function loadUserTier(userId: string): Promise<{ tier: string; xp: number }> {
+  const cached = tierCache.get(userId);
+  if (cached) return cached;
+  try {
+    const { query } = await import("../db.js");
+    const result = await query("SELECT tier, xp FROM user_github_stats WHERE user_id = $1", [userId]);
+    const data = result.rows.length > 0
+      ? { tier: result.rows[0].tier, xp: result.rows[0].xp }
+      : { tier: "bronze", xp: 0 };
+    tierCache.set(userId, data);
+    // Expire cache after 10 minutes
+    setTimeout(() => tierCache.delete(userId), 10 * 60 * 1000);
+    return data;
+  } catch {
+    return { tier: "bronze", xp: 0 };
+  }
+}
+
+export function updateTierCache(userId: string, tier: string, xp: number) {
+  tierCache.set(userId, { tier, xp });
 }
 
 const onlineUsers = new Map<string, { id: string; username: string }>();

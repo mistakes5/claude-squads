@@ -87,7 +87,7 @@ function spawnWatcher() {
   child.on("exit", (code) => {
     console.log(`Watcher exited with code ${code}`);
     watcherProcess = null;
-    if (watcherShouldRestart && code !== null && code > 1) {
+    if (watcherShouldRestart && code !== null && code !== 0) {
       setTimeout(spawnWatcher, 3000);
     }
   });
@@ -305,6 +305,16 @@ app.whenReady().then(() => {
       return { success: true };
     } catch (err: any) {
       return { success: false, error: err.message };
+    }
+  });
+
+  // ─── IPC: DM history ───
+  ipcMain.handle("get-dm-history", async (_e, friendId: string) => {
+    try {
+      const data = await apiFetch(`/api/messages/dm/${encodeURIComponent(friendId)}`);
+      return { success: true, messages: data };
+    } catch (err: any) {
+      return { success: false, error: err.message, messages: [] };
     }
   });
 

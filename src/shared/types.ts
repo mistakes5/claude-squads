@@ -55,6 +55,23 @@ export interface PresenceState {
   status: string;
   current_file: string | null;
   online_at: string;
+  tier?: string;
+  xp?: number;
+}
+
+export type Tier = "bronze" | "silver" | "gold" | "diamond" | "mythic";
+
+export interface GamificationData {
+  xp: number;
+  tier: Tier;
+  contributions: number;
+  public_repos: number;
+  pull_requests: number;
+  followers: number;
+  longest_streak: number;
+  account_age_days: number;
+  achievements: string[];
+  badge_count: number;
 }
 
 export interface SquadsConfig {

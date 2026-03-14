@@ -14,6 +14,8 @@
     "package": "pnpm build && electron-builder --mac --dir",
     "dev:tui": "tsx src/tui/cli.ts",
     "dev:mcp": "tsx src/mcp/server.ts",
+    "build:server": "tsup server/index.ts --format esm --out-dir dist/server --external pg --external socket.io --external express --external cors --external jsonwebtoken --external dotenv",
+    "start": "node dist/server/index.js",
     "server": "tsx server/index.ts",
     "server:dev": "tsx watch server/index.ts",
     "setup": "tsx scripts/setup.ts",

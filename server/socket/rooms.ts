@@ -3,6 +3,7 @@ import {
   addUserToRoom,
   removeUserFromRoom,
   getRoomPresenceList,
+  loadUserTier,
   socketRooms,
 } from "./index.js";
 
@@ -12,12 +13,15 @@ const activeSessions = new Map<string, Map<string, { username: string; startedAt
 export function registerRoomHandlers(io: SocketServer, socket: Socket) {
   const user = (socket as unknown as { user: { id: string; username: string } }).user;
 
-  socket.on("join-room", ({ slug }: { slug: string }) => {
+  socket.on("join-room", async ({ slug }: { slug: string }) => {
     const roomKey = `room:${slug}`;
     socket.join(roomKey);
 
     // Track in socket's room set for disconnect cleanup
     socketRooms.get(socket.id)?.add(slug);
+
+    // Load tier data for presence
+    const { tier, xp } = await loadUserTier(user.id);
 
     // Add to presence
     addUserToRoom(io, slug, {
@@ -25,6 +29,8 @@ export function registerRoomHandlers(io: SocketServer, socket: Socket) {
       username: user.username,
       status: "online",
       current_file: null,
+      tier,
+      xp,
     });
   });
 

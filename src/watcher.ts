@@ -44,6 +44,9 @@ interface FriendState {
   status: "pending" | "accepted";
   direction: "sent" | "received";
   is_online: boolean;
+  tier?: string;
+  xp?: number;
+  badge_count?: number;
 }
 
 interface Invite {
@@ -67,6 +70,14 @@ interface State {
   friends: FriendState[];
   dm_messages: Record<string, RecentMessage[]>;
   pending_invites: Invite[];
+  server_connected: boolean;
+  gamification?: {
+    xp: number;
+    tier: string;
+    badge_count: number;
+  };
+  // Per-user tier data from presence (username → tier info)
+  user_tiers?: Record<string, { tier: string; xp: number }>;
 }
 
 // ─── Helpers ───
@@ -129,18 +140,18 @@ function getDmChannelId(userId1: string, userId2: string): string {
 // ─── Mock data ───
 
 const MOCK_FRIENDS: FriendState[] = [
-  { id: "m1", github_username: "torvalds", avatar_url: null, status: "accepted", direction: "sent", is_online: true },
-  { id: "m2", github_username: "gaearon", avatar_url: null, status: "accepted", direction: "sent", is_online: true },
-  { id: "m3", github_username: "sindresorhus", avatar_url: null, status: "accepted", direction: "received", is_online: true },
-  { id: "m4", github_username: "tj", avatar_url: null, status: "accepted", direction: "sent", is_online: false },
-  { id: "m5", github_username: "mrdoob", avatar_url: null, status: "accepted", direction: "received", is_online: false },
-  { id: "m6", github_username: "defunkt", avatar_url: null, status: "accepted", direction: "sent", is_online: true },
-  { id: "m7", github_username: "mojombo", avatar_url: null, status: "accepted", direction: "received", is_online: false },
-  { id: "m8", github_username: "holman", avatar_url: null, status: "accepted", direction: "sent", is_online: false },
-  { id: "m9", github_username: "fat", avatar_url: null, status: "pending", direction: "received", is_online: true },
-  { id: "m10", github_username: "addyosmani", avatar_url: null, status: "pending", direction: "sent", is_online: false },
-  { id: "m11", github_username: "rauchg", avatar_url: null, status: "accepted", direction: "sent", is_online: true },
-  { id: "m12", github_username: "yyx990803", avatar_url: null, status: "accepted", direction: "received", is_online: false },
+  { id: "m1", github_username: "torvalds", avatar_url: null, status: "accepted", direction: "sent", is_online: true, tier: "mythic", xp: 9999, badge_count: 12 },
+  { id: "m2", github_username: "gaearon", avatar_url: null, status: "accepted", direction: "sent", is_online: true, tier: "diamond", xp: 3200, badge_count: 8 },
+  { id: "m3", github_username: "sindresorhus", avatar_url: null, status: "accepted", direction: "received", is_online: true, tier: "mythic", xp: 7500, badge_count: 11 },
+  { id: "m4", github_username: "tj", avatar_url: null, status: "accepted", direction: "sent", is_online: false, tier: "diamond", xp: 4100, badge_count: 9 },
+  { id: "m5", github_username: "mrdoob", avatar_url: null, status: "accepted", direction: "received", is_online: false, tier: "gold", xp: 1800, badge_count: 6 },
+  { id: "m6", github_username: "defunkt", avatar_url: null, status: "accepted", direction: "sent", is_online: true, tier: "mythic", xp: 8000, badge_count: 13 },
+  { id: "m7", github_username: "mojombo", avatar_url: null, status: "accepted", direction: "received", is_online: false, tier: "gold", xp: 1200, badge_count: 5 },
+  { id: "m8", github_username: "holman", avatar_url: null, status: "accepted", direction: "sent", is_online: false, tier: "silver", xp: 350, badge_count: 3 },
+  { id: "m9", github_username: "fat", avatar_url: null, status: "pending", direction: "received", is_online: true, tier: "gold", xp: 900, badge_count: 4 },
+  { id: "m10", github_username: "addyosmani", avatar_url: null, status: "pending", direction: "sent", is_online: false, tier: "diamond", xp: 2800, badge_count: 7 },
+  { id: "m11", github_username: "rauchg", avatar_url: null, status: "accepted", direction: "sent", is_online: true, tier: "diamond", xp: 3500, badge_count: 8 },
+  { id: "m12", github_username: "yyx990803", avatar_url: null, status: "accepted", direction: "received", is_online: false, tier: "mythic", xp: 6000, badge_count: 10 },
 ];
 
 // ─── Main ───
@@ -160,6 +171,7 @@ async function main() {
       display_name: "Test Pilot",
       avatar_url: "https://github.com/testpilot.png",
       last_update: new Date().toISOString(),
+      server_connected: true,
       recent_messages: [
         { username: "torvalds", content: "just pushed a kernel patch", created_at: new Date(Date.now() - 60000).toISOString() },
         { username: "gaearon", content: "nice! reviewing now", created_at: new Date(Date.now() - 30000).toISOString() },
@@ -174,6 +186,15 @@ async function main() {
       pending_invites: [
         { from_username: "fat", room_slug: "debug-dungeon", room_name: "Debug Dungeon", timestamp: new Date().toISOString() },
       ],
+      gamification: { xp: 1450, tier: "gold", badge_count: 6 },
+      user_tiers: {
+        testpilot: { tier: "gold", xp: 1450 },
+        torvalds: { tier: "mythic", xp: 9999 },
+        gaearon: { tier: "diamond", xp: 3200 },
+        sindresorhus: { tier: "mythic", xp: 7500 },
+        defunkt: { tier: "mythic", xp: 8000 },
+        rauchg: { tier: "diamond", xp: 3500 },
+      },
     };
     writeState(mockState);
     console.log(`Mock state written to ${STATE_FILE}`);
@@ -212,10 +233,16 @@ async function main() {
   const dmMessages = new Map<string, RecentMessage[]>();
   let pendingInvites: Invite[] = [];
   const globalOnlineUsers = new Map<string, { username: string }>();
+  let myGamification: { xp: number; tier: string; badge_count: number } | undefined;
+  const userTiers = new Map<string, { tier: string; xp: number }>();
+  let serverConnected = false;
 
   function updateState() {
     const dmObj: Record<string, RecentMessage[]> = {};
     for (const [k, v] of dmMessages) dmObj[k] = v.slice(-20);
+
+    const tierObj: Record<string, { tier: string; xp: number }> = {};
+    for (const [k, v] of userTiers) tierObj[k] = v;
 
     writeState({
       room_name: currentRoomName,
@@ -230,6 +257,9 @@ async function main() {
       friends,
       dm_messages: dmObj,
       pending_invites: pendingInvites,
+      server_connected: serverConnected,
+      gamification: myGamification,
+      user_tiers: tierObj,
     });
   }
 
@@ -243,14 +273,24 @@ async function main() {
 
   socket.on("connect", () => {
     console.log("Connected to server via Socket.io");
+    serverConnected = true;
+    updateState();
     // Rejoin room on reconnect
     if (currentRoomSlug) {
       socket!.emit("join-room", { slug: currentRoomSlug });
     }
   });
 
+  socket.on("disconnect", () => {
+    console.log("Disconnected from server");
+    serverConnected = false;
+    updateState();
+  });
+
   socket.on("connect_error", (err) => {
     console.error("Socket connection error:", err.message);
+    serverConnected = false;
+    updateState();
   });
 
   // ─── Lobby presence ───
@@ -269,7 +309,7 @@ async function main() {
   });
 
   // ─── DMs (arrive on personal user:<id> room) ───
-  socket.on("dm", ({ from, fromUsername, content, timestamp }: any) => {
+  socket.on("dm", ({ from, fromUsername, content, timestamp, isSelf }: any) => {
     const channelId = getDmChannelId(userId, from);
     const msgs = dmMessages.get(channelId) || [];
     msgs.push({
@@ -280,7 +320,7 @@ async function main() {
     if (msgs.length > 50) msgs.shift();
     dmMessages.set(channelId, msgs);
 
-    if (fromUsername !== username) {
+    if (!isSelf && fromUsername !== username) {
       notify(`DM from ${fromUsername}`, content);
     }
     updateState();
@@ -305,6 +345,12 @@ async function main() {
     onlineUsers = members
       .map((m: any) => m.username)
       .filter((n: string) => n && n !== username);
+    // Extract tier data from presence
+    for (const m of members) {
+      if (m.username && m.tier) {
+        userTiers.set(m.username, { tier: m.tier, xp: m.xp ?? 0 });
+      }
+    }
     updateState();
   });
 
@@ -361,6 +407,40 @@ async function main() {
     } catch (err: any) {
       console.error("Failed to fetch friends:", err.message);
     }
+  }
+
+  // ─── Gamification polling ───
+  async function fetchMyGamification() {
+    try {
+      const data = await apiFetch("/api/gamification/me");
+      myGamification = { xp: data.xp ?? 0, tier: data.tier ?? "bronze", badge_count: data.badge_count ?? 0 };
+      userTiers.set(username, { tier: myGamification.tier, xp: myGamification.xp });
+      updateState();
+    } catch {}
+  }
+
+  async function fetchFriendTiers() {
+    try {
+      const onlineFriends = friends
+        .filter(f => f.status === "accepted")
+        .map(f => f.github_username);
+      if (onlineFriends.length === 0) return;
+
+      const data = await apiFetch("/api/gamification/batch", {
+        method: "POST",
+        body: JSON.stringify({ usernames: onlineFriends }),
+      });
+      for (const [uname, info] of Object.entries(data as Record<string, any>)) {
+        userTiers.set(uname, { tier: info.tier, xp: info.xp });
+        const friend = friends.find(f => f.github_username === uname);
+        if (friend) {
+          friend.tier = info.tier;
+          friend.xp = info.xp;
+          friend.badge_count = info.badge_count;
+        }
+      }
+      updateState();
+    } catch {}
   }
 
   // ─── Room watching ───
@@ -431,10 +511,18 @@ async function main() {
     updateState();
   }
 
+  // Fetch gamification data
+  await fetchMyGamification();
+  await fetchFriendTiers();
+
   console.log(`Squade Code watcher running for ${username}. Ctrl+C to stop.`);
 
   // Poll friends every 30s
   friendsPollInterval = setInterval(fetchFriends, 30_000);
+
+  // Poll gamification every 5 min (own stats) and 2 min (friend tiers)
+  setInterval(fetchMyGamification, 5 * 60_000);
+  setInterval(fetchFriendTiers, 2 * 60_000);
 
   // Re-read settings every 10s for room changes
   settingsPollInterval = setInterval(async () => {
@@ -445,7 +533,41 @@ async function main() {
   }, 10_000);
 }
 
-main().catch((err) => {
-  console.error("Watcher crashed:", err.message);
-  process.exit(1);
-});
+async function mainWithRetry() {
+  let backoff = 2000;
+  const MAX_BACKOFF = 30000;
+
+  while (true) {
+    try {
+      await main();
+      // main() runs indefinitely on success, so if it returns we just restart
+      break;
+    } catch (err: any) {
+      console.error(`Watcher error: ${err.message} — retrying in ${backoff / 1000}s`);
+      // Write a minimal offline state so overlay can show disconnected status
+      ensureDir();
+      const token = loadToken();
+      if (token) {
+        writeState({
+          room_name: "",
+          room_slug: "",
+          online: [],
+          unread: 0,
+          username: token.user?.github_username || "",
+          display_name: token.user?.display_name ?? null,
+          avatar_url: token.user?.avatar_url ?? null,
+          last_update: new Date().toISOString(),
+          recent_messages: [],
+          friends: [],
+          dm_messages: {},
+          pending_invites: [],
+          server_connected: false,
+        });
+      }
+      await new Promise(resolve => setTimeout(resolve, backoff));
+      backoff = Math.min(backoff * 2, MAX_BACKOFF);
+    }
+  }
+}
+
+mainWithRetry();

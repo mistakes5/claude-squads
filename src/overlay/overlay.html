@@ -390,6 +390,113 @@
     }
 
     .no-room { color: var(--text-muted); font-style: italic; font-size: 10px; padding: 12px 0; text-align: center; }
+
+    /* ─── TIER RING SYSTEM ─── */
+    :root {
+      --tier-bronze: #CD7F32;
+      --tier-silver: #C0C0C0;
+      --tier-gold: #FFD700;
+      --tier-diamond: #B9F2FF;
+    }
+
+    .tier-bronze .pic, .tier-bronze .avatar-pic { box-shadow: 0 0 0 2px var(--tier-bronze); }
+    .tier-silver .pic, .tier-silver .avatar-pic { box-shadow: 0 0 0 2px var(--tier-silver); }
+    .tier-gold .pic, .tier-gold .avatar-pic { box-shadow: 0 0 0 2px var(--tier-gold); }
+    .tier-diamond .pic, .tier-diamond .avatar-pic { box-shadow: 0 0 0 2px var(--tier-diamond), 0 0 6px rgba(185,242,255,0.3); }
+    .tier-mythic .pic, .tier-mythic .avatar-pic {
+      box-shadow: 0 0 0 2px var(--accent), 0 0 10px rgba(193,95,60,0.4);
+      animation: mythic-glow 3s ease-in-out infinite;
+    }
+
+    @keyframes mythic-glow {
+      0%, 100% { box-shadow: 0 0 0 2px #C15F3C, 0 0 8px rgba(193,95,60,0.4); }
+      33% { box-shadow: 0 0 0 2px #FFD700, 0 0 8px rgba(255,215,0,0.4); }
+      66% { box-shadow: 0 0 0 2px #B9F2FF, 0 0 8px rgba(185,242,255,0.4); }
+    }
+
+    /* Override roster-item online border when tier is present */
+    .roster-item.tier-bronze .pic,
+    .roster-item.tier-silver .pic,
+    .roster-item.tier-gold .pic,
+    .roster-item.tier-diamond .pic,
+    .roster-item.tier-mythic .pic { border-color: transparent; }
+
+    /* Online dot indicator (replaces border-based online indicator) */
+    .roster-item .online-indicator {
+      position: absolute; bottom: -1px; right: -1px;
+      width: 8px; height: 8px; border-radius: 50%;
+      background: var(--online); border: 1.5px solid var(--surface);
+    }
+
+    /* Achievement badge overlay */
+    .avatar-badge {
+      position: absolute; bottom: -2px; right: -2px;
+      width: 14px; height: 14px; font-size: 8px;
+      line-height: 14px; text-align: center;
+      border-radius: 50%; background: var(--surface);
+      border: 1px solid var(--border);
+    }
+
+    /* Tier label */
+    .tier-label {
+      font-size: 8px; font-weight: 700; text-transform: uppercase;
+      letter-spacing: 0.3px; margin-top: 1px;
+    }
+    .tier-label.bronze { color: var(--tier-bronze); }
+    .tier-label.silver { color: var(--tier-silver); }
+    .tier-label.gold { color: var(--tier-gold); }
+    .tier-label.diamond { color: var(--tier-diamond); }
+    .tier-label.mythic { color: var(--accent); }
+
+    /* Relative position for badge containers */
+    .pic-wrap { position: relative; flex-shrink: 0; }
+
+    /* ─── WELCOME SCREEN ─── */
+    .welcome-view {
+      display: flex; flex-direction: column; align-items: center;
+      justify-content: center; gap: 14px; flex: 1; padding: 20px 16px;
+      text-align: center;
+    }
+    .welcome-mascot { opacity: 0.9; }
+    .welcome-title {
+      font-size: 16px; font-weight: 600; color: var(--text);
+      letter-spacing: 0.2px;
+    }
+    .welcome-tagline {
+      font-size: 11px; color: var(--text-dim); line-height: 1.5;
+      max-width: 220px;
+    }
+    .welcome-connect-btn {
+      display: flex; align-items: center; gap: 8px;
+      padding: 10px 20px; background: var(--accent);
+      border: none; border-radius: 10px;
+      color: #fff; font-size: 12px; font-weight: 600;
+      cursor: pointer; transition: opacity 0.15s;
+      font-family: inherit;
+    }
+    .welcome-connect-btn:hover { opacity: 0.85; }
+    .welcome-connect-btn svg { width: 18px; height: 18px; fill: currentColor; }
+
+    /* ─── LOGIN ERROR ─── */
+    .login-error {
+      background: rgba(220, 60, 60, 0.12); border: 1px solid rgba(220, 60, 60, 0.3);
+      border-radius: 8px; padding: 8px 10px; margin-top: 6px;
+      font-size: 10px; color: #e06060; text-align: center;
+      display: none;
+    }
+    .login-error.visible { display: block; }
+
+    /* ─── CONNECTION STATUS INDICATOR ─── */
+    .conn-status {
+      font-size: 9px; color: var(--text-muted); text-align: center;
+      padding: 3px 0; display: none; align-items: center;
+      justify-content: center; gap: 4px;
+    }
+    .conn-status.disconnected { display: flex; }
+    .conn-dot {
+      width: 6px; height: 6px; border-radius: 50%;
+      background: #e06060; flex-shrink: 0;
+    }
   </style>
 </head>
 <body>
@@ -398,7 +505,30 @@
   </div>
 
   <div id="panel">
-    <div class="panel-inner">
+    <!-- Welcome view (shown when not logged in) -->
+    <div id="welcome-view" class="welcome-view" style="display:none;">
+      <div class="welcome-mascot">
+        <svg viewBox="0 0 959 744" width="64" height="50" xmlns="http://www.w3.org/2000/svg">
+          <path d="M880 744L816 743V582L804 570 709 568 696 577 692 592 702 604V743L638 744V600L642 585 634 572 625 568H412L342 568 333 572 326 581V594L334 603 333 744 266 743V588L255 574 244 568H163L154 572 146 581V591L154 603V743L92 744 96 368 88 356 79 352 0 345V197L81 192 94 183 96 155 92 48 100 33V0H866V38L872 48V174L890 192 958 197V345L884 354 874 361 872 368V592L880 603Z" fill="#CC7C5F"/>
+          <path d="M162 288L160 287V280L165 248 226 230 230 228 234 220 160 192V156L274 202V238Z" fill="#000"/>
+          <path d="M807 292L694 244V238L702 202 807 156V192L734 214 730 223V226L806 252 808 253Z" fill="#000"/>
+        </svg>
+      </div>
+      <div class="welcome-title">welcome to squade code</div>
+      <div class="welcome-tagline">social coding overlay for your squad — connect with friends, chat, and code together</div>
+      <button class="welcome-connect-btn" id="welcome-login-btn" onclick="triggerLoginFromWelcome()">
+        <svg viewBox="0 0 16 16"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
+        <span>Connect GitHub</span>
+      </button>
+      <div class="login-error" id="welcome-login-error"></div>
+    </div>
+
+    <!-- Normal tabbed view (shown when logged in) -->
+    <div id="tabbed-view" class="panel-inner">
+      <div class="conn-status" id="conn-status">
+        <span class="conn-dot"></span>
+        <span>offline — reconnecting</span>
+      </div>
       <div class="tabs">
         <div class="tab active" data-tab="friends" onclick="switchTab('friends')">Friends</div>
         <div class="tab" data-tab="squad" onclick="switchTab('squad')">Squad</div>
@@ -486,7 +616,7 @@
         </div>
         <div class="footer">Squade Code &middot; Cmd+Shift+S to toggle</div>
       </div>
-    </div>
+    </div><!-- /tabbed-view -->
   </div>
 
   <script>
@@ -679,8 +809,11 @@
           <div class="pending-section">
             <div class="pending-label">Friend Requests</div>
             ${pending.map(f => `
-              <div class="friend-item">
-                <img class="pic" src="${f.avatar_url || `https://github.com/${esc(f.github_username)}.png`}" onerror="this.style.display='none'" style="width:28px;height:28px;border-radius:7px;" />
+              <div class="friend-item ${tierClass(f.github_username)}">
+                <div class="pic-wrap">
+                  <img class="pic" src="${f.avatar_url || `https://github.com/${esc(f.github_username)}.png`}" onerror="this.style.display='none'" style="width:28px;height:28px;border-radius:7px;" />
+                  ${badgeHtml(f.github_username)}
+                </div>
                 <div class="info">
                   <div class="name">${esc(f.github_username)}</div>
                   <div class="status-text" style="color:var(--text-muted)">wants to be friends</div>
@@ -716,23 +849,29 @@
         list.innerHTML = '<div class="chat-empty">no friends yet — add someone above</div>';
         return;
       }
-      list.innerHTML = all.map(f => `
-        <div class="friend-item" onclick="openDm('${f.id}', '${esc(f.github_username)}')">
-          <img class="pic" src="${f.avatar_url || `https://github.com/${esc(f.github_username)}.png`}" onerror="this.style.display='none'" style="width:28px;height:28px;border-radius:7px;" />
+      list.innerHTML = all.map(f => {
+        const tier = f.tier || getTier(f.github_username);
+        const tc = tier ? `tier-${tier}` : '';
+        return `
+        <div class="friend-item ${tc}" onclick="openDm('${f.id}', '${esc(f.github_username)}')">
+          <div class="pic-wrap">
+            <img class="pic" src="${f.avatar_url || `https://github.com/${esc(f.github_username)}.png`}" onerror="this.style.display='none'" style="width:28px;height:28px;border-radius:7px;" />
+            ${badgeHtml(f.github_username)}
+          </div>
           <div class="info">
-            <div class="name">${esc(f.github_username)}</div>
+            <div class="name">${esc(f.github_username)}${tier ? ` <span class="tier-label ${tier}">${tier}</span>` : ''}</div>
             <div class="status-text ${f.is_online ? 'online' : 'offline'}">${
               f.status === 'pending' ? 'request sent' : (f.is_online ? 'online' : 'offline')
             }</div>
           </div>
           <div class="${f.is_online ? 'online-dot' : 'offline-dot'}"></div>
           ${f.status === 'accepted' && currentRoomSlug ? `<button class="friend-action-btn" onclick="event.stopPropagation(); inviteToSquad('${f.id}')" title="Invite to squad">+</button>` : ''}
-        </div>
-      `).join('');
+        </div>`;
+      }).join('');
     }
 
     // ─── DM View ───
-    function openDm(friendId, friendUsername) {
+    async function openDm(friendId, friendUsername) {
       const sorted = [currentState?.username || '', friendId].sort();
       activeDm = { friendId, channelId: `dm:${sorted.join(':')}`, username: friendUsername };
       document.getElementById('friends-list-view').style.display = 'none';
@@ -743,7 +882,27 @@
       const friend = (currentState?.friends || []).find(f => f.id === friendId);
       const dot = document.getElementById('dm-status-dot');
       dot.className = friend?.is_online ? 'online-dot' : 'offline-dot';
-      renderDmMessages();
+
+      // Load persisted DM history from server
+      try {
+        const result = await window.squads.getDmHistory(friendId);
+        if (result.success && result.messages && result.messages.length > 0) {
+          const chat = document.getElementById('dm-chat');
+          chat.innerHTML = result.messages.map(m => `
+            <div class="msg">
+              <span class="time">${fmtTime(m.created_at)}</span>
+              <span class="author">${esc(m.github_username)}</span>
+              <span class="text">${esc(m.content)}</span>
+            </div>
+          `).join('');
+          chat.scrollTop = chat.scrollHeight;
+        } else {
+          renderDmMessages();
+        }
+      } catch {
+        renderDmMessages();
+      }
+
       document.getElementById('dm-input').focus();
     }
 
@@ -796,15 +955,21 @@
       // Roster
       const all = getMembers(state);
       const roster = document.getElementById('roster');
-      roster.innerHTML = all.map(name => `
-        <div class="roster-item">
-          <img class="pic" src="${name === currentUsername && currentState?.avatar_url ? esc(currentState.avatar_url) : `https://github.com/${esc(name)}.png`}" onerror="this.style.display='none'" />
+      roster.innerHTML = all.map(name => {
+        const tc = tierClass(name);
+        const tier = getTier(name);
+        return `
+        <div class="roster-item ${tc}">
+          <div class="pic-wrap">
+            <img class="pic" src="${name === currentUsername && currentState?.avatar_url ? esc(currentState.avatar_url) : `https://github.com/${esc(name)}.png`}" onerror="this.style.display='none'" />
+            <div class="online-indicator"></div>
+          </div>
           <div class="info">
-            <div class="name">${esc(name)}</div>
+            <div class="name">${esc(name)}${tier ? ` <span class="tier-label ${tier}">${tier}</span>` : ''}</div>
             <div class="activity">${name === state.username ? 'you' : 'online'}</div>
           </div>
-        </div>
-      `).join('');
+        </div>`;
+      }).join('');
 
       if (state.last_activity) {
         const a = state.last_activity;
@@ -876,6 +1041,29 @@
 
     window.squads.onSettingsUpdate(applySettings);
 
+    // ─── Welcome / tabbed view toggle ───
+    function updateViewMode(state) {
+      const welcomeView = document.getElementById('welcome-view');
+      const tabbedView = document.getElementById('tabbed-view');
+      const isLoggedIn = !!(state && state.username);
+      welcomeView.style.display = isLoggedIn ? 'none' : 'flex';
+      tabbedView.style.display = isLoggedIn ? '' : 'none';
+    }
+
+    // ─── Connection status indicator ───
+    function updateConnStatus(state) {
+      const el = document.getElementById('conn-status');
+      if (!state || !state.username) {
+        el.classList.remove('disconnected');
+        return;
+      }
+      if (state.server_connected === false) {
+        el.classList.add('disconnected');
+      } else {
+        el.classList.remove('disconnected');
+      }
+    }
+
     // ─── GitHub OAuth ───
     function renderGitHub(state) {
       const section = document.getElementById('gh-section');
@@ -883,12 +1071,15 @@
       if (username) {
         const avatarSrc = state.avatar_url || `https://github.com/${esc(username)}.png`;
         const displayName = state.display_name || username;
+        const myTier = state.gamification?.tier || getTier(username);
+        const myXp = state.gamification?.xp || 0;
+        const tc = myTier ? `tier-${myTier}` : '';
         section.innerHTML = `
-          <div class="gh-connected">
-            <img src="${esc(avatarSrc)}" onerror="this.style.display='none'" />
+          <div class="gh-connected ${tc}">
+            <img src="${esc(avatarSrc)}" onerror="this.style.display='none'" style="border-radius:6px;" class="pic" />
             <div>
-              <div class="gh-name">${esc(displayName)}</div>
-              <div class="gh-hint">@${esc(username)} · Connected via GitHub</div>
+              <div class="gh-name">${esc(displayName)}${myTier ? ` <span class="tier-label ${myTier}">${myTier}</span>` : ''}</div>
+              <div class="gh-hint">@${esc(username)}${myXp ? ` · ${myXp.toLocaleString()} XP` : ''} · Connected via GitHub</div>
             </div>
           </div>
           <div class="gh-btn" style="margin-top:6px;justify-content:center;" onclick="triggerLogout()">
@@ -898,19 +1089,56 @@
         section.innerHTML = `
           <div class="gh-btn" id="gh-login-btn" onclick="triggerLogin()">
             ${GH_SVG}<span>Connect GitHub</span>
-          </div>`;
+          </div>
+          <div class="login-error" id="settings-login-error"></div>`;
       }
     }
 
+    function showLoginError(message) {
+      // Show error in both welcome view and settings
+      const welcomeErr = document.getElementById('welcome-login-error');
+      const settingsErr = document.getElementById('settings-login-error');
+      [welcomeErr, settingsErr].forEach(el => {
+        if (el) {
+          el.textContent = message;
+          el.classList.add('visible');
+        }
+      });
+    }
+
+    function hideLoginErrors() {
+      document.querySelectorAll('.login-error').forEach(el => el.classList.remove('visible'));
+    }
+
     async function triggerLogin() {
+      hideLoginErrors();
       const btn = document.getElementById('gh-login-btn');
       if (btn) btn.innerHTML = GH_SVG + '<span>Connecting...</span>';
       const result = await window.squads.triggerLogin();
       if (result.success) {
+        hideLoginErrors();
+        updateViewMode(currentState);
         renderGitHub(currentState);
       } else {
-        if (btn) btn.innerHTML = GH_SVG + '<span>Failed — try again</span>';
-        setTimeout(() => { if (btn) btn.innerHTML = GH_SVG + '<span>Connect GitHub</span>'; }, 2000);
+        const errMsg = result.error || 'Login failed — try again';
+        showLoginError(errMsg);
+        if (btn) btn.innerHTML = GH_SVG + '<span>Connect GitHub</span>';
+      }
+    }
+
+    async function triggerLoginFromWelcome() {
+      hideLoginErrors();
+      const btn = document.getElementById('welcome-login-btn');
+      if (btn) btn.querySelector('span').textContent = 'Connecting...';
+      const result = await window.squads.triggerLogin();
+      if (result.success) {
+        hideLoginErrors();
+        updateViewMode(currentState);
+        renderGitHub(currentState);
+      } else {
+        const errMsg = result.error || 'Login failed — try again';
+        showLoginError(errMsg);
+        if (btn) btn.querySelector('span').textContent = 'Connect GitHub';
       }
     }
 
@@ -920,6 +1148,7 @@
         currentState = null;
         currentUsername = '';
         currentRoomSlug = '';
+        updateViewMode(null);
         renderGitHub(null);
         renderStrip(null);
         document.getElementById('friends-list').innerHTML = '<div class="chat-empty">connect GitHub to get started</div>';
@@ -932,6 +1161,8 @@
       currentState = state;
       currentUsername = state.username || '';
       currentRoomSlug = state.room_slug || '';
+      updateViewMode(state);
+      updateConnStatus(state);
       renderStrip(state);
       renderFriends(state);
       renderSquadTab(state);
@@ -978,7 +1209,7 @@
       const shown = all.slice(0, 3);
       const overflow = all.length - 3;
       stripEl.innerHTML = shown.map(name => `
-        <div class="avatar-card">
+        <div class="avatar-card ${tierClass(name)}">
           <img class="avatar-pic" src="${name === currentUsername && currentState?.avatar_url ? esc(currentState.avatar_url) : `https://github.com/${esc(name)}.png`}"
                onerror="this.style.display='none'" />
           <span class="avatar-name">${esc(name)}</span>
@@ -993,6 +1224,29 @@
       return d.innerHTML;
     }
 
+    function getTier(username) {
+      if (!currentState?.user_tiers) return '';
+      const t = currentState.user_tiers[username];
+      return t?.tier || '';
+    }
+
+    function tierClass(username) {
+      const t = getTier(username);
+      return t ? `tier-${t}` : '';
+    }
+
+    function getBadgeCount(username) {
+      if (!currentState?.friends) return 0;
+      const f = currentState.friends.find(f => f.github_username === username);
+      return f?.badge_count || 0;
+    }
+
+    function badgeHtml(username) {
+      const count = getBadgeCount(username);
+      if (!count) return '';
+      return `<span class="avatar-badge" title="${count} achievement${count !== 1 ? 's' : ''}">${count > 9 ? '9+' : count}</span>`;
+    }
+
     function fmtTime(iso) {
       if (!iso) return '';
       return new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
@@ -1001,6 +1255,7 @@
     // ─── Initial render (before any state-update arrives) ───
     renderStrip(null);
     renderGitHub(null);
+    updateViewMode(null);
   </script>
 </body>
 </html>

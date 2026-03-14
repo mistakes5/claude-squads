@@ -13,17 +13,15 @@ const PORT = parseInt(process.env.PORT ?? "3000", 10);
 const app = express();
 const httpServer = createServer(app);
 
-// CORS
-app.use(
-  cors({
-    origin: [
-      "http://localhost:54321",
-      "http://localhost:3000",
-      "http://localhost:5173",
-    ],
-    credentials: true,
-  }),
-);
+// CORS — dynamic origins: production URL + localhost for dev
+const CORS_ORIGINS = [
+  process.env.SQUADS_SERVER_URL,
+  "http://localhost:54321",
+  "http://localhost:3000",
+  "http://localhost:5173",
+].filter(Boolean) as string[];
+
+app.use(cors({ origin: CORS_ORIGINS, credentials: true }));
 
 app.use(express.json());
 
@@ -37,14 +35,7 @@ app.use(authRouter);
 
 // Socket.io
 const io = new SocketServer(httpServer, {
-  cors: {
-    origin: [
-      "http://localhost:54321",
-      "http://localhost:3000",
-      "http://localhost:5173",
-    ],
-    credentials: true,
-  },
+  cors: { origin: CORS_ORIGINS, credentials: true },
 });
 
 // DB-dependent routes — load gracefully so server starts without Postgres
@@ -57,24 +48,35 @@ async function loadDbRoutes() {
       import("./routes/users.js"),
     ]);
 
+    const invitesRoute = await import("./routes/invites.js");
+
     app.use(rooms.default);
     app.use(friends.default);
     app.use(messages.default);
     app.use(users.default);
+    app.use(invitesRoute.default);
 
     messages.setSocketServer(io);
     rooms.setRoomsSocketServer(io);
 
     // Optional modules
     try {
-      const [activities, pings] = await Promise.all([
+      const [activities, pings, gamification] = await Promise.all([
         import("./routes/activities.js"),
         import("./routes/pings.js"),
+        import("./routes/gamification.js"),
       ]);
       app.use(activities.default);
       app.use(pings.default);
+      app.use(gamification.default);
       activities.setActivitiesSocketServer(io);
       pings.setPingsSocketServer(io);
+    } catch {}
+
+    // Start gamification stats scheduler
+    try {
+      const { startStatsScheduler } = await import("./services/stats-scheduler.js");
+      startStatsScheduler();
     } catch {}
 
     const { setupSocketHandlers } = await import("./socket/index.js");
