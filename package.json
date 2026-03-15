@@ -12,7 +12,9 @@
     "overlay": "pnpm build && npx electron dist/overlay/main.cjs",
     "overlay:mock": "SQUADS_MOCK=1 pnpm overlay",
     "relaunch": "pkill -f 'electron dist/overlay' 2>/dev/null; sleep 0.5; pnpm overlay",
-    "package": "pnpm build && electron-builder --mac --dir",
+    "package": "pnpm build && electron-builder --mac --win",
+    "package:mac": "pnpm build && electron-builder --mac",
+    "package:win": "pnpm build && electron-builder --win",
     "dev:tui": "tsx src/tui/cli.ts",
     "dev:mcp": "tsx src/mcp/server.ts",
     "build:server": "tsup server/index.ts --format esm --out-dir dist/server --external pg --external socket.io --external express --external cors --external jsonwebtoken --external dotenv",
@@ -36,9 +38,15 @@
     "mac": {
       "category": "public.app-category.developer-tools",
       "icon": "assets/icon.icns",
-      "target": [
-        "dir"
-      ]
+      "target": ["dmg", "zip"]
+    },
+    "win": {
+      "icon": "assets/icon.ico",
+      "target": ["nsis", "portable"]
+    },
+    "nsis": {
+      "oneClick": true,
+      "allowToChangeInstallationDirectory": false
     },
     "extraMetadata": {
       "main": "dist/overlay/main.cjs"

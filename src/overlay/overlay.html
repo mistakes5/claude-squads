@@ -166,7 +166,7 @@
     .tab {
       flex: 1; padding: 7px 0; text-align: center;
       font-size: 10px; font-weight: 600;
-      text-transform: uppercase; letter-spacing: 0.5px;
+      letter-spacing: 0.02em;
       color: var(--text-muted); cursor: pointer;
       border-bottom: 2px solid transparent;
       transition: color 0.15s, border-color 0.15s;
@@ -204,8 +204,8 @@
       padding: 4px 0; flex-shrink: 0;
     }
     .pending-label {
-      font-size: 9px; font-weight: 600; text-transform: uppercase;
-      letter-spacing: 0.5px; color: var(--text-muted); padding: 4px 0;
+      font-size: 9px; font-weight: 600;
+      letter-spacing: 0.02em; color: var(--text-muted); padding: 4px 0;
     }
 
     .friends-list {
@@ -407,8 +407,8 @@
     .footer { padding: 4px 0 2px; font-size: 9px; color: var(--text-muted); text-align: center; }
 
     .squad-divider {
-      font-size: 9px; font-weight: 600; text-transform: uppercase;
-      letter-spacing: 0.5px; color: var(--text-muted); padding: 6px 0 2px;
+      font-size: 10px; font-weight: 500;
+      letter-spacing: 0.01em; color: var(--text-dim); padding: 10px 0 4px;
       flex-shrink: 0;
     }
 
@@ -462,8 +462,8 @@
 
     /* Tier label */
     .tier-label {
-      font-size: 8px; font-weight: 700; text-transform: uppercase;
-      letter-spacing: 0.3px; margin-top: 1px;
+      font-size: 8px; font-weight: 600;
+      letter-spacing: 0.02em; margin-top: 1px;
     }
     .tier-label.bronze { color: var(--tier-bronze); }
     .tier-label.silver { color: var(--tier-silver); }
@@ -477,7 +477,7 @@
     /* ─── BORDER PICKER ─── */
     .border-picker {
       display: flex; flex-wrap: wrap; gap: 6px;
-      padding: 6px 0;
+      padding: 6px 12px;
     }
     .border-option {
       position: relative; width: 36px; height: 36px;
@@ -514,7 +514,7 @@
       font-size: 7px; color: var(--text-dim); background: var(--surface);
       padding: 1px 4px; border-radius: 3px; pointer-events: none;
     }
-    .border-option:hover .border-name { display: block; }
+    .border-option:hover .border-name, .border-option.selected .border-name { display: block; }
 
     /* ─── WELCOME SCREEN ─── */
     .welcome-view {
@@ -589,7 +589,7 @@
     }
     .emote-bubble.fading { animation: emote-exit 0.5s ease-in forwards; }
     .emote-bubble .emote-sender { font-size: 10px; font-weight: 600; color: var(--peach); }
-    .emote-bubble .emote-label { font-size: 9px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; }
+    .emote-bubble .emote-label { font-size: 9px; color: var(--text-muted); letter-spacing: 0.02em; }
     @keyframes emote-enter { from { opacity: 0; transform: translateY(20px) scale(0.8); } to { opacity: 1; transform: translateY(0) scale(1); } }
     @keyframes emote-exit { from { opacity: 1; } to { opacity: 0; transform: translateY(-10px) scale(0.9); } }
     @keyframes emote-bob { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-4px); } }
