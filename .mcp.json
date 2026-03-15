@@ -5,7 +5,7 @@
       "args": ["dist/mcp-server.js"],
       "cwd": "/Users/admin/squads",
       "env": {
-        "SQUADS_SERVER_URL": "http://localhost:3000"
+        "SQUADS_SERVER_URL": "https://squade-server-production.up.railway.app"
       }
     }
   }

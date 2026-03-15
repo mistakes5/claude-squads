@@ -89,8 +89,8 @@ ${c.reset}`);
   step(2, 'Click "New OAuth App"');
   step(3, "Fill in:");
   info("App name: Squade Code");
-  info("Homepage URL: http://localhost:3000");
-  info("Authorization callback URL: http://localhost:3000/auth/github/callback");
+  info("Homepage URL: https://squade-server-production.up.railway.app");
+  info("Authorization callback URL: https://squade-server-production.up.railway.app/auth/github/callback");
   step(4, "Copy the Client ID and generate a Client Secret");
   console.log();
 
@@ -120,7 +120,7 @@ JWT_SECRET=${jwtSecret}
 PORT=3000
 
 # Client
-SQUADS_SERVER_URL=http://localhost:3000
+SQUADS_SERVER_URL=https://squade-server-production.up.railway.app
 `;
 
   writeFileSync(ENV_PATH, envContent);
@@ -131,7 +131,7 @@ SQUADS_SERVER_URL=http://localhost:3000
   step(1, "Start the server:");
   info("pnpm server:dev");
   step(2, "In another terminal, test:");
-  info("curl http://localhost:3000/health");
+  info("curl https://squade-server-production.up.railway.app/health");
   console.log();
 
   // ─── Done ───────────────────────────────────────────
@@ -154,7 +154,7 @@ ${c.reset}
       "command": "node",
       "args": ["${ROOT}/dist/mcp-server.js"],
       "env": {
-        "SQUADS_SERVER_URL": "http://localhost:3000"
+        "SQUADS_SERVER_URL": "https://squade-server-production.up.railway.app"
       }
     }${c.reset}
 

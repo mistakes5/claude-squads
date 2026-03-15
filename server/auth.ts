@@ -11,7 +11,7 @@ const GITHUB_USER_URL = "https://api.github.com/user";
 router.get("/auth/github", (_req, res) => {
   const params = new URLSearchParams({
     client_id: process.env.GITHUB_CLIENT_ID!,
-    redirect_uri: `${process.env.SQUADS_SERVER_URL ?? `http://localhost:${process.env.PORT ?? 3000}`}/auth/github/callback`,
+    redirect_uri: `${process.env.SQUADS_SERVER_URL ?? "https://squade-server-production.up.railway.app"}/auth/github/callback`,
     scope: "read:user",
   });
   res.redirect(`${GITHUB_AUTH_URL}?${params.toString()}`);
