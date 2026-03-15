@@ -82,6 +82,13 @@ interface State {
   };
   // Per-user tier data from presence (username → tier info)
   user_tiers?: Record<string, { tier: string; xp: number }>;
+  // Incoming friend emotes (ephemeral — cleared after display)
+  incoming_emotes?: Array<{
+    from: string;
+    fromUsername: string;
+    emote: string;
+    timestamp: string;
+  }>;
 }
 
 // ─── Helpers ───
@@ -189,6 +196,7 @@ async function main() {
   const globalOnlineUsers = new Map<string, { username: string; display_name?: string | null }>();
   let myGamification: State["gamification"];
   const userTiers = new Map<string, { tier: string; xp: number }>();
+  let incomingEmotes: Array<{ from: string; fromUsername: string; emote: string; timestamp: string }> = [];
   let serverConnected = false;
 
   function updateState() {
@@ -214,6 +222,7 @@ async function main() {
       server_connected: serverConnected,
       gamification: myGamification,
       user_tiers: tierObj,
+      incoming_emotes: incomingEmotes,
     });
   }
 
@@ -331,6 +340,24 @@ async function main() {
     if (emoteUser !== username) {
       notify("Squade Code", `${emoteUser} ${emote}`);
     }
+  });
+
+  // ─── Friend emotes (arrive on personal user:<id> room) ───
+  socket.on("friend-emote", ({ from, fromUsername, emote, timestamp, isSelf }: any) => {
+    if (isSelf) return; // Don't show your own emotes back to yourself
+    incomingEmotes.push({
+      from,
+      fromUsername,
+      emote,
+      timestamp: timestamp || new Date().toISOString(),
+    });
+    notify("Squade Code", `${fromUsername} sent you ${emote}!`);
+    updateState();
+    // Auto-clear after 10 seconds so state doesn't grow unbounded
+    setTimeout(() => {
+      incomingEmotes = incomingEmotes.filter(e => e.timestamp !== timestamp);
+      updateState();
+    }, 10_000);
   });
 
   // ─── Friends polling ───

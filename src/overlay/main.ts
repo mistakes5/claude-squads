@@ -378,6 +378,19 @@ app.whenReady().then(() => {
     }
   });
 
+  // ─── IPC: Send friend emote ───
+  ipcMain.handle("send-friend-emote", async (_e, friendId: string, emote: string) => {
+    try {
+      await apiFetch("/api/emotes/friend", {
+        method: "POST",
+        body: JSON.stringify({ friend_id: friendId, emote }),
+      });
+      return { success: true };
+    } catch (err: any) {
+      return { success: false, error: err.message };
+    }
+  });
+
   // ─── IPC: Select avatar border ───
   ipcMain.handle("select-border", async (_e, borderId: string) => {
     try {

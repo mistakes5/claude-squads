@@ -146,4 +146,39 @@ router.get("/api/messages/dm/:friendId", async (req, res) => {
   }
 });
 
+// Send an emote to a friend (not persisted — ephemeral)
+router.post("/api/emotes/friend", async (req, res) => {
+  const { friend_id, emote } = req.body;
+  if (!friend_id || !emote) {
+    res.status(400).json({ error: "friend_id and emote are required" });
+    return;
+  }
+
+  try {
+    const timestamp = new Date().toISOString();
+
+    if (io) {
+      io.to(`user:${friend_id}`).emit("friend-emote", {
+        from: req.user!.id,
+        fromUsername: req.user!.username,
+        emote,
+        timestamp,
+      });
+
+      io.to(`user:${req.user!.id}`).emit("friend-emote", {
+        from: req.user!.id,
+        fromUsername: req.user!.username,
+        emote,
+        timestamp,
+        isSelf: true,
+      });
+    }
+
+    res.status(200).json({ sent: true });
+  } catch (err) {
+    console.error("Error sending friend emote:", err);
+    res.status(500).json({ error: "Failed to send emote" });
+  }
+});
+
 export default router;

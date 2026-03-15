@@ -22,4 +22,24 @@ export function registerDmHandlers(io: SocketServer, socket: Socket) {
       isSelf: true,
     });
   });
+
+  socket.on("send-friend-emote", ({ friendId, emote }: { friendId: string; emote: string }) => {
+    const timestamp = new Date().toISOString();
+
+    io.to(`user:${friendId}`).emit("friend-emote", {
+      from: user.id,
+      fromUsername: user.username,
+      emote,
+      timestamp,
+    });
+
+    // Echo back to sender so they see their own emote
+    io.to(`user:${user.id}`).emit("friend-emote", {
+      from: user.id,
+      fromUsername: user.username,
+      emote,
+      timestamp,
+      isSelf: true,
+    });
+  });
 }

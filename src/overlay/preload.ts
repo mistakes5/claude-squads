@@ -40,4 +40,7 @@ contextBridge.exposeInMainWorld("squads", {
 
   // Avatar border selection
   selectBorder: (borderId: string) => ipcRenderer.invoke("select-border", borderId),
+
+  // Friend emotes
+  sendFriendEmote: (friendId: string, emote: string) => ipcRenderer.invoke("send-friend-emote", friendId, emote),
 });

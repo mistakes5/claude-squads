@@ -166,7 +166,7 @@
     .tab {
       flex: 1; padding: 7px 0; text-align: center;
       font-size: 10px; font-weight: 600;
-      text-transform: uppercase; letter-spacing: 0.8px;
+      text-transform: uppercase; letter-spacing: 0.5px;
       color: var(--text-muted); cursor: pointer;
       border-bottom: 2px solid transparent;
       transition: color 0.15s, border-color 0.15s;
@@ -562,9 +562,61 @@
       width: 6px; height: 6px; border-radius: 50%;
       background: #e06060; flex-shrink: 0;
     }
+
+    /* ─── SPRITE EMOTES ─── */
+    .sprite-emote {
+      width: 64px; height: 64px;
+      image-rendering: pixelated;
+      image-rendering: -moz-crisp-edges;
+    }
+    .sprite-6 { background-size: 600% 100%; animation: sprite-play-6 2s steps(6) infinite; }
+    .sprite-5 { background-size: 500% 100%; animation: sprite-play-5 0.833s steps(5) infinite; }
+    @keyframes sprite-play-6 { from { background-position: 0% 0; } to { background-position: 100% 0; } }
+    @keyframes sprite-play-5 { from { background-position: 0% 0; } to { background-position: 100% 0; } }
+
+    /* Emote bubble container */
+    #emote-bubbles {
+      position: fixed; bottom: 120px; right: 20px; z-index: 10000;
+      display: flex; flex-direction: column-reverse; pointer-events: none; gap: 8px;
+    }
+    .emote-bubble {
+      pointer-events: none;
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: 14px; padding: 10px 14px;
+      backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
+      display: flex; flex-direction: column; align-items: center; gap: 4px;
+      animation: emote-enter 0.3s ease-out, emote-bob 1.5s ease-in-out 0.3s infinite;
+    }
+    .emote-bubble.fading { animation: emote-exit 0.5s ease-in forwards; }
+    .emote-bubble .emote-sender { font-size: 10px; font-weight: 600; color: var(--peach); }
+    .emote-bubble .emote-label { font-size: 9px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; }
+    @keyframes emote-enter { from { opacity: 0; transform: translateY(20px) scale(0.8); } to { opacity: 1; transform: translateY(0) scale(1); } }
+    @keyframes emote-exit { from { opacity: 1; } to { opacity: 0; transform: translateY(-10px) scale(0.9); } }
+    @keyframes emote-bob { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-4px); } }
+
+    /* Emote picker */
+    .emote-picker {
+      display: flex; flex-wrap: wrap; gap: 4px; padding: 6px;
+      border: 1px solid var(--border); border-radius: 8px;
+      background: var(--surface); margin-bottom: 4px;
+    }
+    .emote-btn {
+      width: 36px; height: 36px; border-radius: 6px; border: none;
+      background: rgba(255,255,255,0.05); cursor: pointer;
+      font-size: 18px; line-height: 36px; text-align: center;
+      transition: background 0.12s, transform 0.12s;
+    }
+    .emote-btn:hover { background: var(--accent-soft); transform: scale(1.15); }
+    .emote-toggle {
+      width: 32px; height: 32px; border-radius: 6px; border: 1px solid var(--border);
+      background: transparent; cursor: pointer; font-size: 16px; line-height: 32px;
+      text-align: center; flex-shrink: 0; transition: background 0.12s;
+    }
+    .emote-toggle:hover { background: var(--accent-soft); }
   </style>
 </head>
 <body>
+  <div id="emote-bubbles"></div>
   <div id="oc">
     <div class="strip" id="strip"></div>
   </div>
@@ -597,6 +649,7 @@
       <div class="tabs">
         <div class="tab active" data-tab="friends" onclick="switchTab('friends')">Friends</div>
         <div class="tab" data-tab="squad" onclick="switchTab('squad')">Squad</div>
+        <div class="tab" data-tab="cosmetics" onclick="switchTab('cosmetics')">Cosmetics</div>
         <div class="tab" data-tab="settings" onclick="switchTab('settings')">Settings</div>
       </div>
 
@@ -624,7 +677,9 @@
           <div class="chat-area" id="dm-chat">
             <div class="chat-empty">start a conversation</div>
           </div>
+          <div class="emote-picker" id="dm-emote-picker" style="display:none;"></div>
           <div class="chat-input-row">
+            <button class="emote-toggle" onclick="toggleEmotePicker()">:)</button>
             <input class="chat-input" id="dm-input" type="text"
                    placeholder="Type a message..." autocomplete="off" />
             <button class="chat-send" onclick="sendDm()">Send</button>
@@ -650,14 +705,34 @@
         <div class="no-room" id="no-room" style="display:none;">Join a squad to chat</div>
       </div>
 
-      <!-- ─── SETTINGS TAB ─── -->
-      <div class="tab-body" id="tab-settings">
-        <div id="gh-section"></div>
+      <!-- ─── COSMETICS TAB ─── -->
+      <div class="tab-body" id="tab-cosmetics" style="overflow-y:auto;scrollbar-width:thin;scrollbar-color:var(--scrollbar) transparent;">
         <div id="border-section" style="display:none;">
-          <div class="setting-label">Avatar Border</div>
-          <div class="setting-desc">Choose which border others see on your avatar</div>
+          <div class="squad-divider">Avatar Border</div>
+          <div class="setting-desc" style="padding:0 12px 8px;">Choose which border others see on your avatar</div>
           <div class="border-picker" id="border-picker"></div>
         </div>
+        <div class="squad-divider">Display</div>
+        <div class="setting-row">
+          <div>
+            <div class="setting-label">Show avatar borders</div>
+            <div class="setting-desc">Tier ring glow on avatars</div>
+          </div>
+          <div class="toggle on" id="s-borders" onclick="toggleCosmeticBool('show_borders', this)"></div>
+        </div>
+        <div class="setting-row">
+          <div>
+            <div class="setting-label">Show rank labels</div>
+            <div class="setting-desc">Tier text next to names</div>
+          </div>
+          <div class="toggle on" id="s-ranks" onclick="toggleCosmeticBool('show_rank_labels', this)"></div>
+        </div>
+        <div class="footer">More cosmetics coming soon</div>
+      </div>
+
+      <!-- ─── SETTINGS TAB ─── -->
+      <div class="tab-body" id="tab-settings" style="overflow-y:auto;scrollbar-width:thin;scrollbar-color:var(--scrollbar) transparent;">
+        <div id="gh-section"></div>
         <div class="setting-row">
           <div>
             <div class="setting-label">Theme</div>
@@ -704,6 +779,7 @@
     let dragState = null;
     let currentState = null;
     let activeDm = null; // { friendId, channelId, username }
+    let currentSettings = {};
 
     // ─── Position ───
     const screenSize = window.squads.getScreenSize();
@@ -954,13 +1030,14 @@
             ${badgeHtml(f.github_username)}
           </div>
           <div class="info">
-            <div class="name">${esc(fname)}${tier ? ` <span class="tier-label ${tier}">${tier}</span>` : ''}</div>
+            <div class="name">${esc(fname)}${tierLabelHtml(tier)}</div>
             ${showSub ? `<div class="status-text" style="opacity:0.5;font-size:10px;">@${esc(f.github_username)}</div>` : ''}
             <div class="status-text ${f.is_online ? 'online' : 'offline'}">${
               f.status === 'pending' ? 'request sent' : (f.is_online ? 'online' : 'offline')
             }</div>
           </div>
           <div class="${f.is_online ? 'online-dot' : 'offline-dot'}"></div>
+          ${f.status === 'accepted' ? `<button class="friend-action-btn" onclick="event.stopPropagation(); quickEmote('${f.id}', this)" title="Send emote">:)</button>` : ''}
           ${f.status === 'accepted' && currentRoomSlug ? `<button class="friend-action-btn" onclick="event.stopPropagation(); inviteToSquad('${f.id}')" title="Invite to squad">+</button>` : ''}
         </div>`;
       }).join('');
@@ -1061,7 +1138,7 @@
             <div class="online-indicator"></div>
           </div>
           <div class="info">
-            <div class="name">${esc(name)}${tier ? ` <span class="tier-label ${tier}">${tier}</span>` : ''}</div>
+            <div class="name">${esc(name)}${tierLabelHtml(tier)}</div>
             <div class="activity">${name === state.username ? 'you' : 'online'}</div>
           </div>
         </div>`;
@@ -1115,8 +1192,21 @@
     // ─── Settings ───
     function saveSetting(key, value) { window.squads.saveSetting(key, value); }
     function toggleBool(key, el) { saveSetting(key, el.classList.toggle('on')); }
+    function toggleCosmeticBool(key, el) {
+      const on = el.classList.toggle('on');
+      saveSetting(key, on);
+      currentSettings[key] = on;
+      // Re-render everything to apply cosmetic changes
+      if (currentState) {
+        renderStrip(currentState);
+        renderFriends(currentState);
+        renderSquadTab(currentState);
+        renderGitHub(currentState);
+      }
+    }
 
     function applySettings(s) {
+      currentSettings = s;
       document.body.classList.remove('theme-light', 'theme-terminal', 'theme-cursor');
       if (s.theme === 'light') document.body.classList.add('theme-light');
       if (s.theme === 'terminal') document.body.classList.add('theme-terminal');
@@ -1125,6 +1215,8 @@
       if (themeEl) themeEl.value = s.theme || 'dark';
       setToggle('s-ontop', s.always_on_top !== false);
       setToggle('s-notif', s.notifications !== false);
+      setToggle('s-borders', s.show_borders !== false);
+      setToggle('s-ranks', s.show_rank_labels !== false);
       if (typeof s.pos_x === 'number') posX = s.pos_x;
       if (typeof s.pos_y === 'number') posY = s.pos_y;
       applyPosition();
@@ -1175,7 +1267,7 @@
           <div class="gh-connected ${tc}">
             <img src="${esc(avatarSrc)}" onerror="this.style.display='none'" style="border-radius:6px;" class="pic" />
             <div>
-              <div class="gh-name">${esc(displayName)}${myTier ? ` <span class="tier-label ${myTier}">${myTier}</span>` : ''}</div>
+              <div class="gh-name">${esc(displayName)}${tierLabelHtml(myTier)}</div>
               <div class="gh-hint">@${esc(username)}${myXp ? ` · ${myXp.toLocaleString()} XP` : ''} · Connected via GitHub</div>
             </div>
           </div>
@@ -1190,7 +1282,6 @@
             <span>Disconnect GitHub</span>
           </div>`;
         dnOriginal = state.display_name || '';
-        renderBorderPicker(state);
       } else {
         section.innerHTML = `
           <div class="gh-btn" id="gh-login-btn" onclick="triggerLogin()">
@@ -1287,6 +1378,102 @@
       }
     }
 
+    // ─── Emote system ───
+    const EMOTE_CATALOG = {
+      wave:  { sprite: 'idle_happy',       frames: 6, fps: 3, icon: '\u{1F44B}', label: 'Wave' },
+      think: { sprite: 'waiting_neutral',  frames: 6, fps: 3, icon: '\u{1F914}', label: 'Think' },
+      ship:  { sprite: 'compacting_happy', frames: 5, fps: 6, icon: '\u{1F680}', label: 'Ship' },
+      vibe:  { sprite: 'idle_happy',       frames: 6, fps: 3, icon: '\u{1F3B5}', label: 'Vibe' },
+      fire:  { sprite: 'working_happy',    frames: 6, fps: 4, icon: '\u{1F525}', label: 'Fire' },
+      sleep: { sprite: 'sleeping_neutral', frames: 6, fps: 2, icon: '\u{1F634}', label: 'Sleep' },
+      bug:   { sprite: 'working_sad',      frames: 6, fps: 4, icon: '\u{1FAB2}', label: 'Bug' },
+      lgtm:  { sprite: 'idle_happy',       frames: 6, fps: 3, icon: '\u{1F44D}', label: 'LGTM' },
+      gg:    { sprite: 'idle_neutral',     frames: 6, fps: 3, icon: '\u{1F3AE}', label: 'GG' },
+      rip:   { sprite: 'idle_sob',         frames: 6, fps: 3, icon: '\u{1F480}', label: 'RIP' },
+      cry:   { sprite: 'working_sob',      frames: 6, fps: 4, icon: '\u{1F62D}', label: 'Cry' },
+    };
+
+    const displayedEmoteTimestamps = new Set();
+
+    function checkIncomingEmotes(state) {
+      for (const e of (state.incoming_emotes || [])) {
+        if (displayedEmoteTimestamps.has(e.timestamp)) continue;
+        displayedEmoteTimestamps.add(e.timestamp);
+        showEmoteBubble(e);
+      }
+    }
+
+    function showEmoteBubble({ fromUsername, emote }) {
+      const data = EMOTE_CATALOG[emote];
+      if (!data) return;
+      const container = document.getElementById('emote-bubbles');
+      const bubble = document.createElement('div');
+      bubble.className = 'emote-bubble';
+      const duration = data.frames / data.fps;
+      bubble.innerHTML = `
+        <div class="emote-sender">${esc(fromUsername)}</div>
+        <div class="sprite-emote sprite-${data.frames}"
+             style="background-image:url('sprites/${data.sprite}.png');
+                    animation-duration:${duration}s;"></div>
+        <div class="emote-label">${data.label}</div>
+      `;
+      container.appendChild(bubble);
+      setTimeout(() => {
+        bubble.classList.add('fading');
+        setTimeout(() => bubble.remove(), 500);
+      }, 4000);
+    }
+
+    function toggleEmotePicker() {
+      const picker = document.getElementById('dm-emote-picker');
+      if (picker.style.display === 'none') {
+        if (!activeDm?.friendId) return;
+        picker.style.display = '';
+        picker.innerHTML = Object.entries(EMOTE_CATALOG).map(([name, e]) =>
+          `<button class="emote-btn" onclick="sendFriendEmote('${name}')" title="${e.label}">${e.icon}</button>`
+        ).join('');
+      } else {
+        picker.style.display = 'none';
+      }
+    }
+
+    async function sendFriendEmote(emoteName) {
+      const friendId = activeDm?.friendId;
+      if (!friendId) return;
+      document.getElementById('dm-emote-picker').style.display = 'none';
+      await window.squads.sendFriendEmote(friendId, emoteName);
+      showToast(`Sent ${EMOTE_CATALOG[emoteName]?.label || emoteName}!`);
+    }
+
+    let quickEmoteTarget = null;
+    function quickEmote(friendId, btnEl) {
+      // Remove existing quick picker if any
+      const existing = document.getElementById('quick-emote-picker');
+      if (existing) { existing.remove(); quickEmoteTarget = null; }
+      if (quickEmoteTarget === friendId) { quickEmoteTarget = null; return; }
+      quickEmoteTarget = friendId;
+      const picker = document.createElement('div');
+      picker.id = 'quick-emote-picker';
+      picker.className = 'emote-picker';
+      picker.style.cssText = 'position:absolute;right:0;top:100%;z-index:100;width:200px;';
+      picker.innerHTML = Object.entries(EMOTE_CATALOG).map(([name, e]) =>
+        `<button class="emote-btn" onclick="event.stopPropagation(); sendQuickEmote('${friendId}','${name}')" title="${e.label}">${e.icon}</button>`
+      ).join('');
+      const item = btnEl.closest('.friend-item');
+      item.style.position = 'relative';
+      item.appendChild(picker);
+      // Auto-close after 5s
+      setTimeout(() => { picker.remove(); quickEmoteTarget = null; }, 5000);
+    }
+
+    async function sendQuickEmote(friendId, emoteName) {
+      const picker = document.getElementById('quick-emote-picker');
+      if (picker) picker.remove();
+      quickEmoteTarget = null;
+      await window.squads.sendFriendEmote(friendId, emoteName);
+      showToast(`Sent ${EMOTE_CATALOG[emoteName]?.label || emoteName}!`);
+    }
+
     // ─── State updates ───
     window.squads.onStateUpdate((state) => {
       if (!state) return;
@@ -1299,7 +1486,9 @@
       renderFriends(state);
       renderSquadTab(state);
       renderGitHub(currentState);
+      renderBorderPicker(currentState);
       if (activeDm) renderDmMessages();
+      checkIncomingEmotes(state);
     });
 
     function getMembers(state) {
@@ -1370,6 +1559,7 @@
     }
 
     function tierClass(username) {
+      if (currentSettings.show_borders === false) return '';
       // For the current user, apply their selected border
       if (username === currentUsername && currentState?.gamification) {
         const border = getActiveBorder(currentState);
@@ -1377,6 +1567,11 @@
       }
       const t = getTier(username);
       return t ? `tier-${t}` : '';
+    }
+
+    function tierLabelHtml(tier) {
+      if (!tier || currentSettings.show_rank_labels === false) return '';
+      return ` <span class="tier-label ${tier}">${tier}</span>`;
     }
 
     function getBadgeCount(username) {
