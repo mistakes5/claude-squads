@@ -22,6 +22,7 @@ import {
 } from "fs";
 import { homedir } from "os";
 import { ChildProcess, spawn } from "child_process";
+import { getServerUrl } from "../shared/config.js";
 
 // Load env vars — try project root first, then fall back to packaged app location
 try {
@@ -158,10 +159,6 @@ function sendState() {
 }
 
 // ─── API helper for Express server ───
-function getServerUrl(): string {
-  return process.env.SQUADS_SERVER_URL ?? "http://localhost:3000";
-}
-
 function getAuthHeaders(): Record<string, string> {
   if (!existsSync(TOKEN_FILE)) return {};
   try {

@@ -14,7 +14,7 @@ function ensureDir() {
 }
 
 export function getServerUrl(): string {
-  return process.env.SQUADS_SERVER_URL ?? "http://localhost:3000";
+  return process.env.SQUADS_SERVER_URL ?? "https://squade-server-production.up.railway.app";
 }
 
 export function loadToken(): StoredToken | null {

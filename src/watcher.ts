@@ -16,6 +16,7 @@ import { readFileSync, writeFileSync, existsSync, mkdirSync } from "fs";
 import { join } from "path";
 import { homedir } from "os";
 import { execSync } from "child_process";
+import { getServerUrl } from "./shared/config.js";
 
 // Load env
 try {
@@ -97,10 +98,6 @@ function loadToken() {
 function loadSettings() {
   if (!existsSync(SETTINGS_FILE)) return { current_room: null };
   try { return JSON.parse(readFileSync(SETTINGS_FILE, "utf-8")); } catch { return { current_room: null }; }
-}
-
-function getServerUrl(): string {
-  return process.env.SQUADS_SERVER_URL ?? "http://localhost:3000";
 }
 
 function writeState(state: State) {

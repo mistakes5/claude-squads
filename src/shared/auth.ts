@@ -1,18 +1,11 @@
 import { createServer } from "http";
-import { saveToken, clearToken } from "./config.js";
+import { saveToken, clearToken, getServerUrl } from "./config.js";
 import type { StoredToken } from "./types.js";
 
 const CALLBACK_PORT = 54321;
 
 // Track the active callback server so we can tear it down
 let activeServer: ReturnType<typeof createServer> | null = null;
-
-/**
- * Get the Squade server URL from env, with fallback.
- */
-function getServerUrl(): string {
-  return process.env.SQUADS_SERVER_URL ?? "http://localhost:3000";
-}
 
 /**
  * Opens the browser for GitHub OAuth via our Express server
