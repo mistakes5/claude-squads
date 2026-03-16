@@ -7,8 +7,8 @@
     "squade": "./dist/squads.js"
   },
   "scripts": {
-    "build": "tsup && tsup --config tsup.overlay.ts && cp src/overlay/overlay.html dist/overlay/ && cp -r assets/sprites dist/overlay/sprites 2>/dev/null || true",
-    "build:overlay": "tsup --config tsup.overlay.ts && cp src/overlay/overlay.html dist/overlay/ && cp -r assets/sprites dist/overlay/sprites 2>/dev/null || true",
+    "build": "tsup && tsup --config tsup.overlay.ts && cp src/overlay/overlay.html dist/overlay/ && mkdir -p dist/overlay/sprites && cp assets/sprites/*.png dist/overlay/sprites/ 2>/dev/null || true",
+    "build:overlay": "tsup --config tsup.overlay.ts && cp src/overlay/overlay.html dist/overlay/ && mkdir -p dist/overlay/sprites && cp assets/sprites/*.png dist/overlay/sprites/ 2>/dev/null || true",
     "overlay": "pnpm build && npx electron dist/overlay/main.cjs",
     "overlay:mock": "SQUADS_MOCK=1 pnpm overlay",
     "relaunch": "pkill -f 'electron dist/overlay' 2>/dev/null; sleep 0.5; pnpm overlay",
