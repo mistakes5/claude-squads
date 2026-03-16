@@ -24,14 +24,12 @@ import { homedir } from "os";
 import { ChildProcess, spawn } from "child_process";
 import { getServerUrl } from "../shared/config.js";
 
-// Load env vars — try project root first, then fall back to packaged app location
+// Load env vars — only in dev (project root .env). Packaged apps use hardcoded defaults.
 try {
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   const dotenv = require("dotenv");
   // In dev: __dirname = squads/dist/overlay → ../../.env = squads/.env
-  // In packaged: app.asar won't have .env, so also check ~/.squads/.env
   dotenv.config({ path: join(__dirname, "../../.env") });
-  dotenv.config({ path: join(homedir(), ".squads", ".env") });
 } catch {}
 
 const SQUADS_DIR = join(homedir(), ".squads");
