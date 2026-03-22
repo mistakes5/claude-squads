@@ -59,6 +59,7 @@ interface Invite {
 }
 
 interface State {
+  user_id: string;
   room_name: string;
   room_slug: string;
   online: string[];
@@ -89,6 +90,8 @@ interface State {
     emote: string;
     timestamp: string;
   }>;
+  // Detected coding tools (Cursor, VS Code, Claude Code, etc.)
+  detected_tools?: string[];
 }
 
 // ─── Helpers ───
@@ -193,7 +196,7 @@ async function main() {
   let friends: FriendState[] = [];
   const dmMessages = new Map<string, RecentMessage[]>();
   let pendingInvites: Invite[] = [];
-  const globalOnlineUsers = new Map<string, { username: string; display_name?: string | null }>();
+  const globalOnlineUsers = new Map<string, { username: string; display_name?: string | null; status?: string }>();
   let myGamification: State["gamification"];
   const userTiers = new Map<string, { tier: string; xp: number }>();
   let incomingEmotes: Array<{ from: string; fromUsername: string; emote: string; timestamp: string }> = [];
@@ -207,6 +210,7 @@ async function main() {
     for (const [k, v] of userTiers) tierObj[k] = v;
 
     writeState({
+      user_id: userId,
       room_name: currentRoomName,
       room_slug: currentRoomSlug,
       online: onlineUsers,
@@ -223,6 +227,7 @@ async function main() {
       gamification: myGamification,
       user_tiers: tierObj,
       incoming_emotes: incomingEmotes,
+      detected_tools: detectedTools,
     });
   }
 
@@ -257,16 +262,18 @@ async function main() {
   });
 
   // ─── Lobby presence ───
-  socket.on("presence-update", ({ online }: { online: Array<{ id: string; username: string; display_name?: string | null }> }) => {
+  socket.on("presence-update", ({ online }: { online: Array<{ id: string; username: string; display_name?: string | null; status?: string }> }) => {
     globalOnlineUsers.clear();
     for (const u of online) {
-      globalOnlineUsers.set(u.id, { username: u.username, display_name: u.display_name });
+      globalOnlineUsers.set(u.id, { username: u.username, display_name: u.display_name, status: u.status });
     }
-    // Update friends' online status
+    // Update friends' online status + tool status
     for (const f of friends) {
-      f.is_online = Array.from(globalOnlineUsers.values()).some(
+      const match = Array.from(globalOnlineUsers.values()).find(
         u => u.username === f.github_username
       );
+      f.is_online = !!match;
+      (f as any).tool_status = match?.status || null;
     }
     updateState();
   });
@@ -431,6 +438,68 @@ async function main() {
     } catch {}
   }
 
+  // ─── IDE / tool detection ───
+  // Scans running processes to detect which coding tools are active.
+  // Pattern from discord-vscode / wakatime — process list scanning.
+  let detectedTools: string[] = [];
+
+  function detectCodingTools(): string[] {
+    const tools: string[] = [];
+    try {
+      // Use ps with full args so we can match CLI tools running under node
+      const ps = execSync("ps -eo comm,args 2>/dev/null || ps -eo comm", {
+        encoding: "utf-8", timeout: 3000,
+      });
+      const lines = ps.toLowerCase();
+
+      // IDEs (check process names)
+      if (lines.includes("cursor")) tools.push("Cursor");
+      else if (lines.includes("code helper") || lines.includes("visual studio code")) tools.push("VS Code");
+      if (lines.includes("windsurf")) tools.push("Windsurf");
+      if (lines.includes("zed")) tools.push("Zed");
+
+      // CLI tools (check process args for node-based CLIs)
+      // Claude Code runs as node with "claude" in args
+      if (lines.includes("claude") && (lines.includes("@anthropic") || lines.includes("claude-code") || /node.*claude/.test(lines))) {
+        tools.push("Claude Code");
+      }
+      // Aider, Codex, OpenCode
+      if (lines.includes("aider")) tools.push("Aider");
+      if (lines.includes("codex")) tools.push("Codex");
+
+      // Fallback: check for active Claude Code session JSONL files (written in last 2 min)
+      if (!tools.includes("Claude Code")) {
+        const claudeDir = join(homedir(), ".claude", "projects");
+        if (existsSync(claudeDir)) {
+          try {
+            const recent = execSync(`find "${claudeDir}" -name "*.jsonl" -mmin -2 2>/dev/null | head -1`, {
+              encoding: "utf-8", timeout: 3000,
+            }).trim();
+            if (recent.length > 0) tools.push("Claude Code");
+          } catch {}
+        }
+      }
+    } catch {}
+    return tools;
+  }
+
+  // Poll every 15s, broadcast via socket if in a room
+  setInterval(() => {
+    const newTools = detectCodingTools();
+    const changed = JSON.stringify(newTools) !== JSON.stringify(detectedTools);
+    detectedTools = newTools;
+    if (changed && socket && currentRoomSlug) {
+      const toolStatus = detectedTools.length > 0
+        ? detectedTools.join(" + ")
+        : "idle";
+      socket.emit("set-status", {
+        slug: currentRoomSlug,
+        status: toolStatus,
+      });
+      updateState();
+    }
+  }, 15_000);
+
   // ─── Room watching ───
   async function watchRoom(slug: string) {
     // Leave current room if any
@@ -539,6 +608,7 @@ async function mainWithRetry() {
       const token = loadToken();
       if (token) {
         writeState({
+          user_id: token.user?.id || "",
           room_name: "",
           room_slug: "",
           online: [],

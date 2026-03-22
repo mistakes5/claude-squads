@@ -40,7 +40,7 @@ export function updateTierCache(userId: string, tier: string, xp: number) {
   tierCache.set(userId, { tier, xp });
 }
 
-const onlineUsers = new Map<string, { id: string; username: string; display_name?: string | null }>();
+const onlineUsers = new Map<string, { id: string; username: string; display_name?: string | null; status?: string }>();
 
 // Per-room presence: roomSlug → Map<userId, PresenceInfo>
 export const roomPresence = new Map<string, Map<string, PresenceInfo>>();
@@ -152,6 +152,15 @@ export function setupSocketHandlers(io: SocketServer) {
         existing.status = status || existing.status;
         existing.current_file = currentFile !== undefined ? currentFile : existing.current_file;
         emitRoomPresence(io, slug);
+      }
+
+      // Also update lobby presence so friends can see tool status
+      const lobbyEntry = onlineUsers.get(user.id);
+      if (lobbyEntry && status) {
+        lobbyEntry.status = status;
+        io.to("lobby").emit("presence-update", {
+          online: Array.from(onlineUsers.values()),
+        });
       }
     });
 

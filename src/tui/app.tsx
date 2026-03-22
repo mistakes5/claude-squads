@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import { Box, Text, useApp, useInput } from "ink";
 import type { Socket } from "socket.io-client";
 import { claude } from "./theme.js";
@@ -17,6 +17,7 @@ import { useActivity } from "./hooks/useActivity.js";
 import { usePings } from "./hooks/usePings.js";
 
 import { apiFetch } from "../shared/api-client.js";
+import { EMOTES } from "../mcp/tools/emotes.js";
 import type { Room, OverlayMode, StoredToken } from "../shared/types.js";
 
 type Panel = "friends" | "chat" | "rooms";
@@ -73,9 +74,16 @@ export function App({ socket, token, initialMode }: Props) {
   }, []);
 
   // Show notifications for new messages in notification mode
+  // Track previous count to distinguish bulk fetches from single new messages
+  const prevMessageCountRef = useRef(0);
   useEffect(() => {
-    if (mode === "notifications" && messages.length > 0) {
-      const last = messages[messages.length - 1];
+    const prev = prevMessageCountRef.current;
+    const current = messages.length;
+    prevMessageCountRef.current = current;
+
+    // Only notify for single incremental messages, not initial bulk load
+    if (mode === "notifications" && current > prev && current - prev === 1) {
+      const last = messages[current - 1];
       const username = (last.users as any)?.github_username ?? "Someone";
       setNotification({
         id: last.id,
@@ -100,29 +108,47 @@ export function App({ socket, token, initialMode }: Props) {
     }
   }, [latestPing]);
 
-  // Handle emote broadcasts from Socket.io
+  // Resolve emote payload from name → ASCII art frames
+  const resolveEmote = useCallback((username: string, emoteName: string) => {
+    const emoteDef = EMOTES[emoteName];
+    if (emoteDef) {
+      setActiveEmote({
+        github_username: username,
+        emote_name: emoteName,
+        frames: emoteDef.frames.map((f) => f.art),
+        frameMs: emoteDef.frameMs,
+        timestamp: new Date().toISOString(),
+      });
+    } else {
+      setNotification({
+        id: `emote-${Date.now()}`,
+        message: `${username} sent :${emoteName}:`,
+        type: "activity" as const,
+      });
+    }
+    setOverlayVisible(true);
+  }, []);
+
+  // Handle emote broadcasts from Socket.io (room emotes + friend emotes)
   useEffect(() => {
     if (!socket) return;
 
-    const handler = (payload: any) => {
-      if (payload.frames) {
-        setActiveEmote(payload);
-      } else {
-        setNotification({
-          id: `emote-${payload.timestamp || Date.now()}`,
-          message: `${payload.username} ${payload.emote}`,
-          type: "activity" as const,
-        });
-      }
-      setOverlayVisible(true);
+    const handleRoomEmote = (payload: any) => {
+      resolveEmote(payload.username, payload.emote);
     };
 
-    socket.on("emote", handler);
+    const handleFriendEmote = (payload: any) => {
+      resolveEmote(payload.fromUsername, payload.emote);
+    };
+
+    socket.on("emote", handleRoomEmote);
+    socket.on("friend-emote", handleFriendEmote);
 
     return () => {
-      socket.off("emote", handler);
+      socket.off("emote", handleRoomEmote);
+      socket.off("friend-emote", handleFriendEmote);
     };
-  }, [socket]);
+  }, [socket, resolveEmote]);
 
   const joinRoom = useCallback(
     async (slug: string) => {

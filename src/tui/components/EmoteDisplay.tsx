@@ -2,12 +2,12 @@ import React, { useState, useEffect } from "react";
 import { Box, Text } from "ink";
 import { claude } from "../theme.js";
 
-interface EmotePayload {
+export interface EmotePayload {
   github_username: string;
   emote_name: string;
-  frames: string[];
-  frameMs: number;
-  timestamp: string;
+  frames: string[];   // each string is one frame of ASCII art
+  frameMs: number;    // ms between frames
+  timestamp: string;  // used to detect new emotes
 }
 
 interface Props {

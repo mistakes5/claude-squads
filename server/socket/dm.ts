@@ -33,13 +33,15 @@ export function registerDmHandlers(io: SocketServer, socket: Socket) {
       timestamp,
     });
 
-    // Echo back to sender so they see their own emote
-    io.to(`user:${user.id}`).emit("friend-emote", {
-      from: user.id,
-      fromUsername: user.username,
-      emote,
-      timestamp,
-      isSelf: true,
-    });
+    // Echo back to sender so they see their own emote (skip if self-send to avoid duplicate)
+    if (friendId !== user.id) {
+      io.to(`user:${user.id}`).emit("friend-emote", {
+        from: user.id,
+        fromUsername: user.username,
+        emote,
+        timestamp,
+        isSelf: true,
+      });
+    }
   });
 }

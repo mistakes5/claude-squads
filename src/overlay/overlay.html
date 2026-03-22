@@ -1033,7 +1033,7 @@
             <div class="name">${esc(fname)}${tierLabelHtml(tier)}</div>
             ${showSub ? `<div class="status-text" style="opacity:0.5;font-size:10px;">@${esc(f.github_username)}</div>` : ''}
             <div class="status-text ${f.is_online ? 'online' : 'offline'}">${
-              f.status === 'pending' ? 'request sent' : (f.is_online ? 'online' : 'offline')
+              f.status === 'pending' ? 'request sent' : (f.is_online ? (f.tool_status || 'online') : 'offline')
             }</div>
           </div>
           <div class="${f.is_online ? 'online-dot' : 'offline-dot'}"></div>
@@ -1044,8 +1044,15 @@
     }
 
     // ─── DM View ───
+    // Local message cache — merges REST history + socket state updates.
+    // Pattern from Socket.IO private messaging tutorial: maintain local array,
+    // never replace from server state alone — only append truly new messages.
+    let dmLocalMessages = [];
+
     async function openDm(friendId, friendUsername) {
-      const sorted = [currentState?.username || '', friendId].sort();
+      // Use user_id (UUID) to match the watcher's getDmChannelId(uuid, uuid) format
+      const myId = currentState?.user_id || currentState?.username || '';
+      const sorted = [myId, friendId].sort();
       activeDm = { friendId, channelId: `dm:${sorted.join(':')}`, username: friendUsername };
       document.getElementById('friends-list-view').style.display = 'none';
       const dmView = document.getElementById('dm-view');
@@ -1056,51 +1063,110 @@
       const dot = document.getElementById('dm-status-dot');
       dot.className = friend?.is_online ? 'online-dot' : 'offline-dot';
 
-      // Load persisted DM history from server
+      // Reset local cache for new conversation
+      dmLocalMessages = [];
+
+      // 1. Load persisted history from DB (authoritative, up to 50 messages)
       try {
         const result = await window.squads.getDmHistory(friendId);
-        if (result.success && result.messages && result.messages.length > 0) {
-          const chat = document.getElementById('dm-chat');
-          chat.innerHTML = result.messages.map(m => `
-            <div class="msg">
-              <span class="time">${fmtTime(m.created_at)}</span>
-              <span class="author">${esc(m.github_username)}</span>
-              <span class="text">${esc(m.content)}</span>
-            </div>
-          `).join('');
-          chat.scrollTop = chat.scrollHeight;
-        } else {
-          renderDmMessages();
+        if (result.success && result.messages?.length > 0) {
+          dmLocalMessages = result.messages.map(m => ({
+            username: m.github_username || m.username,
+            content: m.content,
+            created_at: m.created_at,
+          }));
         }
-      } catch {
-        renderDmMessages();
-      }
+      } catch {}
 
+      // 2. Merge any state messages the watcher captured this session
+      const stateMsgs = (currentState?.dm_messages || {})[activeDm.channelId] || [];
+      for (const m of stateMsgs) {
+        const isDupe = dmLocalMessages.some(h =>
+          h.content === m.content &&
+          Math.abs(new Date(h.created_at) - new Date(m.created_at)) < 2000
+        );
+        if (!isDupe) dmLocalMessages.push(m);
+      }
+      dmLocalMessages.sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+
+      // 3. Render
+      dmFullRender();
       document.getElementById('dm-input').focus();
     }
 
     function closeDm() {
       activeDm = null;
+      dmLocalMessages = [];
       document.getElementById('dm-view').classList.remove('active');
       document.getElementById('friends-list-view').style.display = '';
     }
 
-    function renderDmMessages() {
-      if (!activeDm || !currentState) return;
-      const msgs = (currentState.dm_messages || {})[activeDm.channelId] || [];
+    // Full render from local cache (only on open / channel switch)
+    function dmFullRender() {
       const chat = document.getElementById('dm-chat');
-      if (msgs.length === 0) {
+      if (dmLocalMessages.length === 0) {
         chat.innerHTML = '<div class="chat-empty">start a conversation</div>';
         return;
       }
-      const wasAtBottom = chat.scrollHeight - chat.scrollTop - chat.clientHeight < 30;
-      chat.innerHTML = msgs.slice(-30).map(m => `
+      chat.innerHTML = dmLocalMessages.slice(-50).map(m => `
         <div class="msg">
           <span class="time">${fmtTime(m.created_at)}</span>
           <span class="author">${esc(m.username)}</span>
           <span class="text">${esc(m.content)}</span>
         </div>
       `).join('');
+      chat.scrollTop = chat.scrollHeight;
+    }
+
+    // Append-only render — called on state updates, never replaces existing messages
+    function renderDmMessages() {
+      if (!activeDm || !currentState) return;
+      const stateMsgs = (currentState.dm_messages || {})[activeDm.channelId] || [];
+      if (stateMsgs.length === 0) return;
+
+      // Find truly new messages not already in our local cache
+      let hasNew = false;
+      for (const m of stateMsgs) {
+        const isDupe = dmLocalMessages.some(h =>
+          h.content === m.content &&
+          Math.abs(new Date(h.created_at) - new Date(m.created_at)) < 2000
+        );
+        if (!isDupe) {
+          dmLocalMessages.push(m);
+          hasNew = true;
+        }
+      }
+      if (!hasNew) return;
+
+      // Append only the new messages to the DOM
+      const chat = document.getElementById('dm-chat');
+      const empty = chat.querySelector('.chat-empty');
+      if (empty) empty.remove();
+      const wasAtBottom = chat.scrollHeight - chat.scrollTop - chat.clientHeight < 30;
+
+      // Re-render the last few messages (simpler than trying to track exact DOM count)
+      // This is safe because we only reach here when new messages were added
+      const toRender = dmLocalMessages.slice(-3); // only the newest
+      for (const m of toRender) {
+        // Skip if already in DOM (check last child content)
+        const lastMsg = chat.querySelector('.msg:last-child');
+        if (lastMsg) {
+          const lastText = lastMsg.querySelector('.text')?.textContent;
+          const lastAuthor = lastMsg.querySelector('.author')?.textContent;
+          if (lastText === m.content && lastAuthor === m.username) continue;
+        }
+        // Remove optimistic duplicate if present
+        for (const el of chat.querySelectorAll('.msg[data-optimistic]')) {
+          if (el.querySelector('.text')?.textContent === m.content) {
+            el.remove();
+            break;
+          }
+        }
+        const div = document.createElement('div');
+        div.className = 'msg';
+        div.innerHTML = `<span class="time">${fmtTime(m.created_at)}</span><span class="author">${esc(m.username)}</span><span class="text">${esc(m.content)}</span>`;
+        chat.appendChild(div);
+      }
       if (wasAtBottom) chat.scrollTop = chat.scrollHeight;
     }
 
@@ -1110,6 +1176,22 @@
       const msg = input.value.trim();
       if (!msg) return;
       input.value = '';
+
+      // Add to local cache immediately (optimistic)
+      const now = new Date().toISOString();
+      dmLocalMessages.push({ username: currentUsername, content: msg, created_at: now });
+
+      // Append to DOM immediately
+      const chat = document.getElementById('dm-chat');
+      const empty = chat.querySelector('.chat-empty');
+      if (empty) empty.remove();
+      const div = document.createElement('div');
+      div.className = 'msg';
+      div.setAttribute('data-optimistic', '1');
+      div.innerHTML = `<span class="time">${fmtTime(now)}</span><span class="author">${esc(currentUsername)}</span><span class="text">${esc(msg)}</span>`;
+      chat.appendChild(div);
+      chat.scrollTop = chat.scrollHeight;
+
       await window.squads.sendDm(activeDm.friendId, msg);
     }
 
@@ -1150,12 +1232,27 @@
         if (selfItem) selfItem.textContent = `${a.action}${a.detail ? ' ' + a.detail : ''}`;
       }
 
-      // Squad chat
+      // Squad chat — smart render: only update when messages actually change
       const msgs = state.recent_messages || [];
       const chat = document.getElementById('squad-chat');
-      if (msgs.length === 0) {
-        chat.innerHTML = '<div class="chat-empty">no messages yet</div>';
-      } else {
+      const chatMsgCount = chat.querySelectorAll('.msg').length;
+      if (msgs.length === 0 && chatMsgCount === 0) {
+        if (!chat.querySelector('.chat-empty')) {
+          chat.innerHTML = '<div class="chat-empty">no messages yet</div>';
+        }
+      } else if (msgs.length > chatMsgCount && chatMsgCount > 0) {
+        // Append only new messages
+        const wasAtBottom = chat.scrollHeight - chat.scrollTop - chat.clientHeight < 30;
+        const newMsgs = msgs.slice(chatMsgCount);
+        for (const m of newMsgs) {
+          const div = document.createElement('div');
+          div.className = 'msg';
+          div.innerHTML = `<span class="time">${fmtTime(m.created_at)}</span><span class="author">${esc(m.username)}</span><span class="text">${esc(m.content)}</span>`;
+          chat.appendChild(div);
+        }
+        if (wasAtBottom) chat.scrollTop = chat.scrollHeight;
+      } else if (msgs.length !== chatMsgCount) {
+        // Full re-render (first load, room switch, etc.)
         const wasAtBottom = chat.scrollHeight - chat.scrollTop - chat.clientHeight < 30;
         chat.innerHTML = msgs.slice(-30).map(m => `
           <div class="msg">
@@ -1380,17 +1477,15 @@
 
     // ─── Emote system ───
     const EMOTE_CATALOG = {
-      wave:  { sprite: 'idle_happy',       frames: 6, fps: 3, icon: '\u{1F44B}', label: 'Wave' },
-      think: { sprite: 'waiting_neutral',  frames: 6, fps: 3, icon: '\u{1F914}', label: 'Think' },
-      ship:  { sprite: 'compacting_happy', frames: 5, fps: 6, icon: '\u{1F680}', label: 'Ship' },
-      vibe:  { sprite: 'idle_happy',       frames: 6, fps: 3, icon: '\u{1F3B5}', label: 'Vibe' },
-      fire:  { sprite: 'working_happy',    frames: 6, fps: 4, icon: '\u{1F525}', label: 'Fire' },
-      sleep: { sprite: 'sleeping_neutral', frames: 6, fps: 2, icon: '\u{1F634}', label: 'Sleep' },
-      bug:   { sprite: 'working_sad',      frames: 6, fps: 4, icon: '\u{1FAB2}', label: 'Bug' },
-      lgtm:  { sprite: 'idle_happy',       frames: 6, fps: 3, icon: '\u{1F44D}', label: 'LGTM' },
-      gg:    { sprite: 'idle_neutral',     frames: 6, fps: 3, icon: '\u{1F3AE}', label: 'GG' },
-      rip:   { sprite: 'idle_sob',         frames: 6, fps: 3, icon: '\u{1F480}', label: 'RIP' },
-      cry:   { sprite: 'working_sob',      frames: 6, fps: 4, icon: '\u{1F62D}', label: 'Cry' },
+      wave:    { sprite: 'idle_happy',       frames: 6, fps: 3, icon: '\u{1F44B}', label: 'Wave' },
+      alert:   { sprite: 'waiting_neutral',  frames: 6, fps: 3, icon: '\u{1F6A8}', label: 'Alert' },
+      ship:    { sprite: 'compacting_happy', frames: 5, fps: 6, icon: '\u{1F680}', label: 'Ship' },
+      vibe:    { sprite: 'idle_happy',       frames: 6, fps: 3, icon: '\u{1F3B5}', label: 'Vibe' },
+      think:   { sprite: 'working_happy',    frames: 6, fps: 4, icon: '\u{1F914}', label: 'Think' },
+      sleep:   { sprite: 'sleeping_neutral', frames: 6, fps: 2, icon: '\u{1F634}', label: 'Sleep' },
+      sad:     { sprite: 'working_sad',      frames: 6, fps: 4, icon: '\u{1F622}', label: 'Sad' },
+      chillin: { sprite: 'idle_neutral',     frames: 6, fps: 3, icon: '\u{1F60E}', label: 'Chillin' },
+      sob:     { sprite: 'idle_sob',         frames: 6, fps: 3, icon: '\u{1F62D}', label: 'Sob' },
     };
 
     const displayedEmoteTimestamps = new Set();
@@ -1455,15 +1550,15 @@
       const picker = document.createElement('div');
       picker.id = 'quick-emote-picker';
       picker.className = 'emote-picker';
-      picker.style.cssText = 'position:absolute;right:0;top:100%;z-index:100;width:200px;';
+      // Position fixed relative to the button so it's not clipped by overflow
+      const rect = btnEl.getBoundingClientRect();
+      picker.style.cssText = `position:fixed;z-index:10000;width:200px;right:${window.innerWidth - rect.right}px;top:${rect.bottom + 4}px;`;
       picker.innerHTML = Object.entries(EMOTE_CATALOG).map(([name, e]) =>
         `<button class="emote-btn" onclick="event.stopPropagation(); sendQuickEmote('${friendId}','${name}')" title="${e.label}">${e.icon}</button>`
       ).join('');
-      const item = btnEl.closest('.friend-item');
-      item.style.position = 'relative';
-      item.appendChild(picker);
+      document.body.appendChild(picker);
       // Auto-close after 5s
-      setTimeout(() => { picker.remove(); quickEmoteTarget = null; }, 5000);
+      setTimeout(() => { if (picker.parentNode) picker.remove(); quickEmoteTarget = null; }, 5000);
     }
 
     async function sendQuickEmote(friendId, emoteName) {
@@ -1527,22 +1622,37 @@
           </div>`;
         return;
       }
-      const all = getMembers(state);
-      const shown = all.slice(0, 3);
-      const overflow = all.length - 3;
-      const myDisplayName = state.display_name || state.username || '';
-      stripEl.innerHTML = shown.map((name, i) => {
-        const isMe = i === 0;
-        const avatarSrc = isMe && currentState?.avatar_url
-          ? esc(currentState.avatar_url)
-          : `https://github.com/${esc(isMe ? currentUsername : name)}.png`;
-        const tierName = isMe ? currentUsername : name;
-        return `
-        <div class="avatar-card ${tierClass(tierName)}">
-          <img class="avatar-pic" src="${avatarSrc}" onerror="this.style.display='none'" />
-          <span class="avatar-name">${esc(name)}</span>
+
+      // Show friends on the strip — online first, then offline, max 3
+      const accepted = (state.friends || []).filter(f => f.status === 'accepted');
+      const sorted = [...accepted].sort((a, b) => {
+        if (a.is_online && !b.is_online) return -1;
+        if (!a.is_online && b.is_online) return 1;
+        return 0;
+      });
+      const shown = sorted.slice(0, 3);
+      const overflow = sorted.length - 3;
+
+      if (shown.length === 0) {
+        // No friends yet — show own avatar as fallback
+        stripEl.innerHTML = `
+        <div class="avatar-card ${tierClass(currentUsername)}">
+          <img class="avatar-pic" src="${esc(state.avatar_url || `https://github.com/${currentUsername}.png`)}" onerror="this.style.display='none'" />
+          <span class="avatar-name">${esc(state.display_name || state.username)}</span>
         </div>`;
-      }).join('') + (overflow > 0 ? `<div class="overflow-text">+${overflow} more</div>` : '');
+        return;
+      }
+
+      stripEl.innerHTML = shown.map(f => {
+        const fname = f.display_name || f.github_username;
+        const avatarSrc = f.avatar_url || `https://github.com/${esc(f.github_username)}.png`;
+        const onlineClass = f.is_online ? '' : ' style="opacity:0.5"';
+        return `
+        <div class="avatar-card ${tierClass(f.github_username)}"${onlineClass}>
+          <img class="avatar-pic" src="${esc(avatarSrc)}" onerror="this.style.display='none'" />
+          <span class="avatar-name">${esc(fname)}</span>
+        </div>`;
+      }).join('') + (overflow > 0 ? `<div class="overflow-text">+${overflow}</div>` : '');
     }
 
     function esc(s) {
@@ -1635,8 +1745,11 @@
       // Update locally immediately
       if (currentState?.gamification) {
         currentState.gamification.selected_border = borderId;
+        // Re-render all sections that show the border
+        renderBorderPicker(currentState);
         renderGitHub(currentState);
         renderStrip(currentState);
+        renderFriends(currentState);
       }
       // Persist to server
       window.squads.selectBorder(borderId);

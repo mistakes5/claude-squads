@@ -269,6 +269,32 @@ export async function sendEmote(
 }
 
 /**
+ * Send a test emote to yourself — for debugging emote rendering.
+ * Uses the friend-emote path to echo back to the sender's own TUI.
+ */
+export async function testEmote(emoteName: string): Promise<string> {
+  const token = loadToken();
+  if (!token) throw new Error("Not logged in");
+
+  const emote = EMOTES[emoteName];
+  if (!emote) {
+    const available = Object.keys(EMOTES).join(", ");
+    throw new Error(`Unknown emote "${emoteName}". Available: ${available}`);
+  }
+
+  const socket = getSocket();
+  // Send to self via friend-emote — server emits to user:${userId}
+  // which the TUI socket also listens on
+  socket.emit("send-friend-emote", {
+    friendId: token.user.id,
+    emote: emoteName,
+  });
+
+  const lastFrame = emote.frames[emote.frames.length - 1];
+  return `Test emote sent to yourself!\n${lastFrame.art}\n(${emote.description})`;
+}
+
+/**
  * List all available emotes.
  */
 export function listEmotes(): string {

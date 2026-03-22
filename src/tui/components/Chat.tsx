@@ -39,14 +39,14 @@ export function Chat({ messages, onSend, active }: Props) {
             no messages yet. say hi!
           </Text>
         ) : (
-          displayMessages.map((m, i) => {
+          displayMessages.map((m) => {
             const time = new Date(m.created_at).toLocaleTimeString([], {
               hour: "2-digit",
               minute: "2-digit",
             });
             const username = (m.users as any)?.github_username ?? "?";
             return (
-              <Box key={i} gap={1}>
+              <Box key={m.id} gap={1}>
                 <Text color={claude.dim}>{time}</Text>
                 <Text bold color={claude.peach}>
                   {username}

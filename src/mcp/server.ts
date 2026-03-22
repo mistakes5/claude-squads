@@ -21,7 +21,7 @@ import { postActivity, getActivityHistory } from "./tools/activity.js";
 import { addFriend, acceptFriend, listFriends } from "./tools/friends.js";
 import { shareSession, unshareSession, listSessions } from "./tools/sessions.js";
 import { pingUser, getPendingPings } from "./tools/ping.js";
-import { sendEmote, listEmotes } from "./tools/emotes.js";
+import { sendEmote, listEmotes, testEmote } from "./tools/emotes.js";
 
 const server = new Server(
   { name: "squads", version: "0.1.0" },
@@ -244,6 +244,17 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
       description: "List all available animated emotes.",
       inputSchema: { type: "object" as const, properties: {} },
     },
+    {
+      name: "squads_test_emote",
+      description: "Send a test emote to yourself — useful for verifying emote rendering works. No room required.",
+      inputSchema: {
+        type: "object" as const,
+        properties: {
+          emote: { type: "string", description: "Emote name (e.g. clawd-wave, clawd-ship, gg)" },
+        },
+        required: ["emote"],
+      },
+    },
   ],
 }));
 
@@ -442,6 +453,11 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
       case "squads_emotes": {
         return text(listEmotes());
+      }
+
+      case "squads_test_emote": {
+        const art = await testEmote(args!.emote as string);
+        return text(art);
       }
 
       default:
