@@ -92,6 +92,39 @@ interface State {
   }>;
   // Detected coding tools (Cursor, VS Code, Claude Code, etc.)
   detected_tools?: string[];
+  // Ship feed — recent ship events from squad members
+  ship_events?: Array<{
+    username: string;
+    commitMessage: string;
+    commitHash: string | null;
+    projectName: string | null;
+    timestamp: string;
+  }>;
+  // SOS alerts — urgent help requests from squad members
+  sos_alerts?: Array<{
+    sosId: string;
+    username: string;
+    error: string | null;
+    currentFile: string | null;
+    description: string;
+    gitBranch: string | null;
+    timestamp: string;
+  }>;
+  // Squad status line message — ephemeral message from a squad member
+  squad_message?: { username: string; message: string; timestamp: string } | null;
+  // Live sessions being spectated
+  live_sessions?: Array<{
+    userId: string;
+    username: string;
+    startedAt: string;
+    lastEvent?: { type: string; summary: string; timestamp: string };
+  }>;
+  // Session spectating event feed (when watching someone)
+  spectating?: {
+    userId: string;
+    username: string;
+    events: Array<{ type: string; summary: string; toolName?: string; timestamp: string }>;
+  } | null;
 }
 
 // ─── Helpers ───
@@ -228,6 +261,11 @@ async function main() {
       user_tiers: tierObj,
       incoming_emotes: incomingEmotes,
       detected_tools: detectedTools,
+      ship_events: shipEvents,
+      sos_alerts: sosAlerts,
+      squad_message: squadMessage,
+      live_sessions: liveSessions,
+      spectating: spectatingData,
     });
   }
 
@@ -365,6 +403,268 @@ async function main() {
       incomingEmotes = incomingEmotes.filter(e => e.timestamp !== timestamp);
       updateState();
     }, 10_000);
+  });
+
+  // ─── Ship Feed ───
+  const shipEvents: Array<{ username: string; commitMessage: string; commitHash: string | null; projectName: string | null; timestamp: string }> = [];
+
+  socket.on("ship", ({ username: shipUser, commitMessage, commitHash, projectName, timestamp }: any) => {
+    shipEvents.push({
+      username: shipUser,
+      commitMessage,
+      commitHash: commitHash || null,
+      projectName: projectName || null,
+      timestamp: timestamp || new Date().toISOString(),
+    });
+    if (shipEvents.length > 10) shipEvents.shift();
+    if (shipUser !== username) {
+      notify("Ship!", `${shipUser} shipped: ${commitMessage}`);
+    }
+    updateState();
+  });
+
+  // ─── SOS Ping ───
+  const sosAlerts: Array<{ sosId: string; username: string; error: string | null; currentFile: string | null; description: string; gitBranch: string | null; timestamp: string }> = [];
+
+  socket.on("sos-ping", ({ username: sosUser, sosId, error, currentFile, description, gitBranch, timestamp }: any) => {
+    if (sosUser === username) return; // don't alert yourself
+    sosAlerts.push({
+      sosId,
+      username: sosUser,
+      error: error || null,
+      currentFile: currentFile || null,
+      description,
+      gitBranch: gitBranch || null,
+      timestamp: timestamp || new Date().toISOString(),
+    });
+    if (sosAlerts.length > 20) sosAlerts.shift();
+    notify("SOS from " + sosUser, description);
+    updateState();
+  });
+
+  // ─── Squad Status Line Message ───
+  let squadMessage: { username: string; message: string; timestamp: string } | null = null;
+  let squadMessageTimer: ReturnType<typeof setTimeout> | null = null;
+
+  socket.on("squad-message", ({ username: msgUser, message, timestamp }: any) => {
+    if (msgUser === username) return;
+    squadMessage = { username: msgUser, message, timestamp: timestamp || new Date().toISOString() };
+    updateState();
+    // Auto-clear after 30s
+    if (squadMessageTimer) clearTimeout(squadMessageTimer);
+    squadMessageTimer = setTimeout(() => {
+      squadMessage = null;
+      squadMessageTimer = null;
+      updateState();
+    }, 30_000);
+  });
+
+  // ─── Session Spectating ───
+  const liveSessions: Array<{ userId: string; username: string; startedAt: string; lastEvent?: { type: string; summary: string; timestamp: string } }> = [];
+  let spectatingData: { userId: string; username: string; events: Array<{ type: string; summary: string; toolName?: string; timestamp: string }> } | null = null;
+
+  socket.on("session-update", ({ type, username: sessUser, userId: sessUserId }: any) => {
+    if (type === "started") {
+      if (!liveSessions.some(s => s.userId === sessUserId)) {
+        liveSessions.push({ userId: sessUserId, username: sessUser, startedAt: new Date().toISOString() });
+      }
+    } else if (type === "ended") {
+      const idx = liveSessions.findIndex(s => s.userId === sessUserId);
+      if (idx !== -1) liveSessions.splice(idx, 1);
+      // Clear spectating if we were watching this user
+      if (spectatingData?.userId === sessUserId) spectatingData = null;
+    }
+    updateState();
+  });
+
+  socket.on("session-data", ({ userId: dataUserId, username: dataUser, events }: any) => {
+    // Update live session's last event
+    const session = liveSessions.find(s => s.userId === dataUserId);
+    if (session && events?.length > 0) {
+      session.lastEvent = events[events.length - 1];
+    }
+    // If we're spectating this user, append events
+    const settings = loadSettings();
+    if (settings.spectating_user === dataUserId) {
+      if (!spectatingData || spectatingData.userId !== dataUserId) {
+        spectatingData = { userId: dataUserId, username: dataUser, events: [] };
+      }
+      spectatingData.events.push(...(events || []));
+      if (spectatingData.events.length > 100) {
+        spectatingData.events = spectatingData.events.slice(-100);
+      }
+    }
+    updateState();
+  });
+
+  // ─── Git ref watcher (auto-detect pushes) ───
+  let gitWatcher: ReturnType<typeof import("fs").watch> | null = null;
+  const seenCommitHashes = new Set<string>();
+  let lastShipTime = 0;
+
+  function startGitRefWatcher() {
+    const gitRefsDir = join(process.cwd(), ".git", "refs", "remotes", "origin");
+    if (!existsSync(gitRefsDir)) return;
+    try {
+      gitWatcher = require("fs").watch(gitRefsDir, { persistent: false }, () => {
+        const now = Date.now();
+        if (now - lastShipTime < 5000) return; // throttle 5s
+        try {
+          const log = execSync('git log -1 --format="%s|%h"', { encoding: "utf-8", timeout: 3000 }).trim();
+          const [commitMessage, commitHash] = log.split("|");
+          if (!commitHash || seenCommitHashes.has(commitHash)) return;
+          seenCommitHashes.add(commitHash);
+          if (seenCommitHashes.size > 50) {
+            const first = seenCommitHashes.values().next().value;
+            if (first) seenCommitHashes.delete(first);
+          }
+          lastShipTime = now;
+          const projectName = require("path").basename(process.cwd());
+          if (socket) {
+            socket.emit("ship", {
+              slug: currentRoomSlug,
+              commitMessage,
+              commitHash,
+              projectName,
+              isManual: false,
+            });
+          }
+        } catch {}
+      });
+    } catch {}
+  }
+
+  // ─── Session JSONL Tailing (for sharing your own session) ───
+  let sessionFileWatcher: ReturnType<typeof import("fs").watch> | null = null;
+  let sessionFilePos = 0;
+  let sessionFlushTimer: ReturnType<typeof setInterval> | null = null;
+  let sessionEventBuffer: Array<{ type: string; summary: string; toolName?: string; timestamp: string }> = [];
+  let isSharing = false;
+
+  function findActiveSessionFile(): string | null {
+    const claudeDir = join(homedir(), ".claude");
+    const sessionsDir = join(claudeDir, "sessions");
+    if (!existsSync(sessionsDir)) return null;
+
+    try {
+      // Find session files with running PIDs
+      const files = readFileSync === undefined ? [] :
+        require("fs").readdirSync(sessionsDir).filter((f: string) => f.endsWith(".json"));
+      for (const f of files) {
+        try {
+          const data = JSON.parse(readFileSync(join(sessionsDir, f), "utf-8"));
+          if (data.pid && data.cwd) {
+            // Check if PID is alive
+            try { process.kill(data.pid, 0); } catch { continue; }
+            // Find matching JSONL in projects
+            const projectsDir = join(claudeDir, "projects");
+            if (!existsSync(projectsDir)) continue;
+            const projDirs = require("fs").readdirSync(projectsDir);
+            for (const pd of projDirs) {
+              const pdPath = join(projectsDir, pd);
+              const jsonls = require("fs").readdirSync(pdPath)
+                .filter((j: string) => j.endsWith(".jsonl"))
+                .map((j: string) => ({ name: j, path: join(pdPath, j), mtime: require("fs").statSync(join(pdPath, j)).mtimeMs }))
+                .sort((a: any, b: any) => b.mtime - a.mtime);
+              if (jsonls.length > 0) return jsonls[0].path;
+            }
+          }
+        } catch {}
+      }
+    } catch {}
+    return null;
+  }
+
+  function startSessionTailing() {
+    if (sessionFileWatcher) return;
+    const filePath = findActiveSessionFile();
+    if (!filePath) return;
+
+    try {
+      const stat = require("fs").statSync(filePath);
+      sessionFilePos = stat.size; // Start from current end (don't replay history)
+
+      sessionFileWatcher = require("fs").watch(filePath, { persistent: false }, () => {
+        try {
+          const newStat = require("fs").statSync(filePath);
+          if (newStat.size <= sessionFilePos) return;
+          const fd = require("fs").openSync(filePath, "r");
+          const buf = Buffer.alloc(newStat.size - sessionFilePos);
+          require("fs").readSync(fd, buf, 0, buf.length, sessionFilePos);
+          require("fs").closeSync(fd);
+          sessionFilePos = newStat.size;
+
+          const lines = buf.toString("utf-8").split("\n").filter(Boolean);
+          for (const line of lines) {
+            try {
+              const event = JSON.parse(line);
+              const mapped = mapSessionEvent(event);
+              if (mapped) sessionEventBuffer.push(mapped);
+            } catch {}
+          }
+          if (sessionEventBuffer.length > 100) {
+            sessionEventBuffer = sessionEventBuffer.slice(-100);
+          }
+        } catch {}
+      });
+
+      // Flush buffer to socket every second
+      sessionFlushTimer = setInterval(() => {
+        if (sessionEventBuffer.length > 0 && socket && currentRoomSlug && isSharing) {
+          socket.emit("session-data", {
+            slug: currentRoomSlug,
+            events: sessionEventBuffer.splice(0),
+          });
+        }
+      }, 1000);
+    } catch {}
+  }
+
+  function stopSessionTailing() {
+    if (sessionFileWatcher) { sessionFileWatcher.close(); sessionFileWatcher = null; }
+    if (sessionFlushTimer) { clearInterval(sessionFlushTimer); sessionFlushTimer = null; }
+    sessionEventBuffer = [];
+    sessionFilePos = 0;
+  }
+
+  function mapSessionEvent(event: any): { type: string; summary: string; toolName?: string; timestamp: string } | null {
+    const ts = event.timestamp || new Date().toISOString();
+    if (event.type === "user" && event.message?.role === "user") {
+      const content = typeof event.message.content === "string"
+        ? event.message.content
+        : JSON.stringify(event.message.content);
+      return { type: "prompt", summary: content.slice(0, 200), timestamp: ts };
+    }
+    if (event.type === "assistant" && event.message?.content) {
+      const parts = Array.isArray(event.message.content) ? event.message.content : [event.message.content];
+      for (const part of parts) {
+        if (part.type === "tool_use") {
+          return { type: "tool_use", toolName: part.name, summary: `using ${part.name}`, timestamp: ts };
+        }
+        if (typeof part === "string" || part.type === "text") {
+          const text = typeof part === "string" ? part : part.text;
+          if (text) return { type: "response", summary: text.slice(0, 200), timestamp: ts };
+        }
+      }
+    }
+    if (event.type === "thinking") {
+      return { type: "thinking", summary: "thinking...", timestamp: ts };
+    }
+    return null;
+  }
+
+  // Listen for session share/unshare from the server to start/stop tailing
+  socket.on("session-update", (data: any) => {
+    // Already handled above for live_sessions tracking; also trigger tailing
+    if (data.userId === userId) {
+      if (data.type === "started") {
+        isSharing = true;
+        startSessionTailing();
+      } else if (data.type === "ended") {
+        isSharing = false;
+        stopSessionTailing();
+      }
+    }
   });
 
   // ─── Friends polling ───
@@ -538,6 +838,9 @@ async function main() {
     }
     if (friendsPollInterval) clearInterval(friendsPollInterval);
     if (settingsPollInterval) clearInterval(settingsPollInterval);
+    if (gitWatcher) { gitWatcher.close(); gitWatcher = null; }
+    if (squadMessageTimer) { clearTimeout(squadMessageTimer); squadMessageTimer = null; }
+    stopSessionTailing();
   }
 
   process.on("SIGINT", () => { cleanup(); process.exit(0); });
@@ -571,6 +874,9 @@ async function main() {
   // Fetch gamification data
   await fetchMyGamification();
   await fetchFriendTiers();
+
+  // Start git ref watcher for auto ship detection
+  startGitRefWatcher();
 
   console.log(`Squade Code watcher running for ${username}. Ctrl+C to stop.`);
 

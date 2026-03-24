@@ -1,11 +1,22 @@
 import { createServer } from "http";
+import { createServer as createNetServer } from "net";
 import { saveToken, clearToken, getServerUrl } from "./config.js";
 import type { StoredToken } from "./types.js";
 
-const CALLBACK_PORT = 54321;
-
 // Track the active callback server so we can tear it down
 let activeServer: ReturnType<typeof createServer> | null = null;
+
+/** Find a free port by binding to :0 and reading the assigned port. */
+function findFreePort(): Promise<number> {
+  return new Promise((resolve, reject) => {
+    const srv = createNetServer();
+    srv.listen(0, () => {
+      const port = (srv.address() as { port: number }).port;
+      srv.close(() => resolve(port));
+    });
+    srv.on("error", reject);
+  });
+}
 
 /**
  * Opens the browser for GitHub OAuth via our Express server
@@ -25,18 +36,22 @@ export async function login(): Promise<StoredToken["user"]> {
     throw new Error("Server unreachable — try again later");
   }
 
-  const authUrl = `${serverUrl}/auth/github`;
+  // Find a free port for the callback server
+  const callbackPort = await findFreePort();
+
+  // Pass port to server so it redirects to the right place
+  const authUrl = `${serverUrl}/auth/github?callback_port=${callbackPort}`;
 
   // Open browser to our server's GitHub OAuth endpoint
   const openModule = await import("open");
   await openModule.default(authUrl);
 
   // Wait for callback with JWT
-  const tokenData = await waitForCallback();
+  const tokenData = await waitForCallback(callbackPort);
   return tokenData.user;
 }
 
-function waitForCallback(): Promise<StoredToken> {
+function waitForCallback(callbackPort: number): Promise<StoredToken> {
   // Kill any lingering server from a previous attempt
   if (activeServer) {
     try { activeServer.close(); } catch {}
@@ -56,7 +71,7 @@ function waitForCallback(): Promise<StoredToken> {
     }, 120_000);
 
     const server = createServer(async (req, res) => {
-      const url = new URL(req.url ?? "/", `http://localhost:${CALLBACK_PORT}`);
+      const url = new URL(req.url ?? "/", `http://localhost:${callbackPort}`);
 
       if (url.pathname !== "/callback") {
         res.writeHead(404);
@@ -65,6 +80,7 @@ function waitForCallback(): Promise<StoredToken> {
       }
 
       const jwt = url.searchParams.get("token");
+      const refreshToken = url.searchParams.get("refresh_token") ?? "";
       if (!jwt) {
         res.writeHead(400);
         res.end("Missing token parameter");
@@ -103,7 +119,7 @@ function waitForCallback(): Promise<StoredToken> {
 
         const token: StoredToken = {
           access_token: jwt,
-          refresh_token: "", // Not used with JWT auth
+          refresh_token: refreshToken,
           expires_at: payload.exp || 0,
           user: {
             id: payload.sub,
@@ -148,7 +164,7 @@ function waitForCallback(): Promise<StoredToken> {
     });
 
     activeServer = server;
-    server.listen(CALLBACK_PORT);
+    server.listen(callbackPort);
   });
 }
 

@@ -22,6 +22,8 @@ import { addFriend, acceptFriend, listFriends } from "./tools/friends.js";
 import { shareSession, unshareSession, listSessions } from "./tools/sessions.js";
 import { pingUser, getPendingPings } from "./tools/ping.js";
 import { sendEmote, listEmotes, testEmote } from "./tools/emotes.js";
+import { announceShip } from "./tools/ship.js";
+import { sendSos } from "./tools/sos.js";
 
 const server = new Server(
   { name: "squads", version: "0.1.0" },
@@ -255,6 +257,44 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
         required: ["emote"],
       },
     },
+    {
+      name: "squads_ship",
+      description: "Announce a ship to your squad — celebrate a deploy, merge, release, or milestone. Auto-fires the ship emote.",
+      inputSchema: {
+        type: "object" as const,
+        properties: {
+          slug: { type: "string", description: "Room slug" },
+          message: { type: "string", description: "What you shipped (e.g. 'deployed v2.0!', 'merged auth refactor')" },
+        },
+        required: ["slug", "message"],
+      },
+    },
+    {
+      name: "squads_sos",
+      description: "Send an SOS help request to your squad with error context. Triggers urgent notifications for all online squad members.",
+      inputSchema: {
+        type: "object" as const,
+        properties: {
+          slug: { type: "string", description: "Room slug" },
+          description: { type: "string", description: "What's wrong / what you need help with" },
+          error: { type: "string", description: "Error message or stack trace (optional)" },
+          current_file: { type: "string", description: "File you're working on (optional)" },
+        },
+        required: ["slug", "description"],
+      },
+    },
+    {
+      name: "squads_squad_message",
+      description: "Send a short message that appears in your squad members' Claude Code status line for 30 seconds. Max 50 characters.",
+      inputSchema: {
+        type: "object" as const,
+        properties: {
+          slug: { type: "string", description: "Room slug" },
+          message: { type: "string", description: "Short message (max 50 chars)" },
+        },
+        required: ["slug", "message"],
+      },
+    },
   ],
 }));
 
@@ -458,6 +498,37 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       case "squads_test_emote": {
         const art = await testEmote(args!.emote as string);
         return text(art);
+      }
+
+      case "squads_ship": {
+        const result = await announceShip(
+          args!.slug as string,
+          args!.message as string
+        );
+        return text(result);
+      }
+
+      case "squads_sos": {
+        const result = await sendSos(
+          args!.slug as string,
+          args!.description as string,
+          args!.error as string | undefined,
+          args!.current_file as string | undefined
+        );
+        return text(result);
+      }
+
+      case "squads_squad_message": {
+        const token = loadToken();
+        if (!token) return text("Not logged in.");
+        const { getSocket, getJoinedRooms } = await import("./tools/_socket.js");
+        const slug = args!.slug as string;
+        if (!getJoinedRooms().has(slug)) return text(`Not in room "${slug}". Join first.`);
+        (await getSocket()).emit("squad-message", {
+          slug,
+          message: ((args!.message as string) || "").slice(0, 50),
+        });
+        return text(`Squad message sent: "${((args!.message as string) || "").slice(0, 50)}"`);
       }
 
       default:

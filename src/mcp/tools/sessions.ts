@@ -8,21 +8,21 @@ interface SharedSession {
 }
 
 export async function shareSession(roomSlug: string): Promise<string> {
-  joinRoom(roomSlug);
-  const socket = getSocket();
+  await joinRoom(roomSlug);
+  const socket = await getSocket();
   socket.emit("share-session", { slug: roomSlug });
   return `session-${Date.now()}`;
 }
 
 export async function unshareSession(roomSlug: string): Promise<void> {
-  const socket = getSocket();
+  const socket = await getSocket();
   socket.emit("unshare-session", { slug: roomSlug });
 }
 
 export async function listSessions(
   roomSlug: string
 ): Promise<SharedSession[]> {
-  const socket = getSocket();
+  const socket = await getSocket();
   return new Promise((resolve) => {
     socket.emit("list-sessions", { slug: roomSlug }, (data: any[]) => {
       resolve(
@@ -44,7 +44,7 @@ export async function broadcastSessionEvent(
   roomSlug: string,
   event: { type: string; detail: string }
 ): Promise<void> {
-  const socket = getSocket();
+  const socket = await getSocket();
   socket.emit("post-activity", {
     slug: roomSlug,
     action: `session:${event.type}`,

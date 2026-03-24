@@ -594,6 +594,62 @@
     @keyframes emote-exit { from { opacity: 1; } to { opacity: 0; transform: translateY(-10px) scale(0.9); } }
     @keyframes emote-bob { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-4px); } }
 
+    /* SOS alert cards */
+    .sos-card {
+      background: rgba(220, 60, 60, 0.08);
+      border: 1px solid rgba(220, 60, 60, 0.3);
+      border-radius: 8px;
+      padding: 6px 8px;
+      margin: 4px 8px;
+    }
+    .sos-card .sos-header {
+      display: flex; align-items: center; gap: 4px;
+      font-size: 10px; font-weight: 600; color: #e06060;
+    }
+    .sos-card .sos-desc { font-size: 10px; color: var(--text); margin-top: 3px; }
+    .sos-card .sos-error {
+      font-size: 9px; color: var(--text-dim);
+      font-family: monospace; margin-top: 3px;
+      max-height: 40px; overflow-y: auto;
+      background: rgba(0,0,0,0.2); padding: 3px 5px; border-radius: 4px;
+      white-space: pre-wrap; word-break: break-all;
+    }
+    .sos-card .sos-dismiss {
+      font-size: 9px; color: var(--text-muted); cursor: pointer;
+      margin-top: 3px; text-align: right;
+    }
+    .sos-card .sos-dismiss:hover { color: var(--text); }
+
+    /* Ship feed items */
+    .ship-item {
+      display: flex; align-items: center; gap: 6px;
+      padding: 3px 8px; font-size: 10px;
+    }
+    .ship-item .ship-icon { font-size: 12px; flex-shrink: 0; }
+    .ship-item .ship-user { color: var(--peach); font-weight: 600; }
+    .ship-item .ship-msg { color: var(--text); flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .ship-item .ship-time { color: var(--text-dim); font-size: 9px; flex-shrink: 0; }
+
+    /* Live session items */
+    .session-item {
+      display: flex; align-items: center; gap: 6px;
+      padding: 3px 8px; font-size: 10px; cursor: pointer;
+    }
+    .session-item:hover { background: rgba(255,255,255,0.05); border-radius: 4px; }
+    .session-item .live-dot {
+      width: 6px; height: 6px; border-radius: 50%;
+      background: #e06060; flex-shrink: 0;
+      animation: pulse 1.5s ease-in-out infinite;
+    }
+    @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
+
+    /* Spectator feed */
+    #spectator-feed .spec-event { padding: 2px 0; }
+    #spectator-feed .spec-prompt { color: var(--peach); }
+    #spectator-feed .spec-response { color: var(--text); }
+    #spectator-feed .spec-tool { color: var(--text-dim); font-style: italic; }
+    #spectator-feed .spec-thinking { color: var(--text-muted); animation: pulse 1.5s ease-in-out infinite; }
+
     /* Emote picker */
     .emote-picker {
       display: flex; flex-wrap: wrap; gap: 4px; padding: 6px;
@@ -687,11 +743,19 @@
         </div>
       </div>
 
-      <!-- ─── SQUAD TAB (roster + chat) ─── -->
+      <!-- ─── SQUAD TAB (roster + chat + ships + SOS + sessions) ─── -->
       <div class="tab-body" id="tab-squad">
         <div id="squad-content">
+          <!-- SOS alerts (top priority) -->
+          <div id="sos-alerts"></div>
           <div class="squad-divider">Members</div>
-          <div class="roster" id="roster" style="max-height: 140px;"></div>
+          <div class="roster" id="roster" style="max-height: 100px;"></div>
+          <!-- Live sessions -->
+          <div class="squad-divider" id="sessions-divider" style="display:none;">Live Sessions</div>
+          <div id="live-sessions" style="max-height:60px;overflow-y:auto;"></div>
+          <!-- Ship feed -->
+          <div class="squad-divider" id="ships-divider" style="display:none;">Ships</div>
+          <div id="ship-feed" style="max-height:70px;overflow-y:auto;"></div>
           <div class="squad-divider">Chat</div>
           <div class="chat-area" id="squad-chat" style="flex: 1;">
             <div class="chat-empty">no messages yet</div>
@@ -701,6 +765,15 @@
                    placeholder="Message squad..." autocomplete="off" />
             <button class="chat-send" onclick="sendSquadChat()">Send</button>
           </div>
+        </div>
+        <!-- Spectator view (slides in over squad content) -->
+        <div id="spectator-view" style="display:none;flex-direction:column;flex:1;min-height:0;">
+          <div class="dm-header">
+            <button class="dm-back" onclick="closeSpectator()">&larr;</button>
+            <span class="dm-recipient" id="spectator-name"></span>
+            <span style="color:#e06060;font-size:9px;animation:pulse 1.5s ease-in-out infinite;">LIVE</span>
+          </div>
+          <div class="chat-area" id="spectator-feed" style="flex:1;font-family:var(--font-mono,'Geist Mono',monospace);font-size:10px;"></div>
         </div>
         <div class="no-room" id="no-room" style="display:none;">Join a squad to chat</div>
       </div>
@@ -793,7 +866,7 @@
     applyPosition();
 
     // ─── Interactive toggle ───
-    let overStrip = false, overPanel = false;
+    let overStrip = false, overPanel = false, overQuickPicker = false;
 
     function enterUI() {
       cursorOver = true;
@@ -801,7 +874,7 @@
       window.squads.enterInteractive();
     }
     function leaveUI() {
-      cursorOver = overStrip || overPanel;
+      cursorOver = overStrip || overPanel || overQuickPicker;
       if (cursorOver || dragState) return;
       scheduleLeave();
     }
@@ -811,11 +884,13 @@
     panelEl.addEventListener('mouseenter', () => { overPanel = true; enterUI(); });
     panelEl.addEventListener('mouseleave', () => { overPanel = false; leaveUI(); });
 
+    // Quick emote picker hover tracking is wired in quickEmote() below
+
     function scheduleLeave() {
       if (leaveTimer) return;
       leaveTimer = setTimeout(() => {
         leaveTimer = null;
-        if (overStrip || overPanel || dragState) return;
+        if (overStrip || overPanel || overQuickPicker || dragState) return;
         if (document.activeElement && document.activeElement.tagName === 'INPUT') return;
         if (panelOpen) closePanel();
         window.squads.leaveInteractive();
@@ -823,7 +898,7 @@
     }
 
     document.addEventListener('mousedown', (e) => {
-      if (!e.target.closest('#oc') && !e.target.closest('#panel')) {
+      if (!e.target.closest('#oc') && !e.target.closest('#panel') && !e.target.closest('#quick-emote-picker')) {
         if (panelOpen) closePanel();
         window.squads.leaveInteractive();
       }
@@ -1475,6 +1550,115 @@
       }
     }
 
+    // ─── Ship Feed ───
+    function renderShipFeed(state) {
+      const ships = state?.ship_events || [];
+      const divider = document.getElementById('ships-divider');
+      const feed = document.getElementById('ship-feed');
+      if (!divider || !feed) return;
+      if (ships.length === 0) { divider.style.display = 'none'; feed.innerHTML = ''; return; }
+      divider.style.display = '';
+      feed.innerHTML = ships.slice().reverse().map(s => {
+        const ago = timeAgo(s.timestamp);
+        return `<div class="ship-item">
+          <span class="ship-icon">🚀</span>
+          <span class="ship-user">${esc(s.username)}</span>
+          <span class="ship-msg">${esc(s.commitMessage)}</span>
+          <span class="ship-time">${ago}</span>
+        </div>`;
+      }).join('');
+    }
+
+    function timeAgo(ts) {
+      const diff = Date.now() - new Date(ts).getTime();
+      const mins = Math.floor(diff / 60000);
+      if (mins < 1) return 'now';
+      if (mins < 60) return mins + 'm';
+      const hrs = Math.floor(mins / 60);
+      if (hrs < 24) return hrs + 'h';
+      return Math.floor(hrs / 24) + 'd';
+    }
+
+    // ─── SOS Alerts ───
+    function renderSosAlerts(state) {
+      const alerts = state?.sos_alerts || [];
+      const container = document.getElementById('sos-alerts');
+      if (!container) return;
+      if (alerts.length === 0) { container.innerHTML = ''; return; }
+      container.innerHTML = alerts.map(a => `
+        <div class="sos-card" id="sos-${esc(a.sosId)}">
+          <div class="sos-header">🆘 ${esc(a.username)} needs help</div>
+          <div class="sos-desc">${esc(a.description)}</div>
+          ${a.error ? `<div class="sos-error">${esc(a.error)}</div>` : ''}
+          ${a.currentFile ? `<div style="font-size:9px;color:var(--text-dim);margin-top:2px;">📄 ${esc(a.currentFile)}${a.gitBranch ? ' · ' + esc(a.gitBranch) : ''}</div>` : ''}
+          <div class="sos-dismiss" onclick="dismissSos('${esc(a.sosId)}')">dismiss</div>
+        </div>
+      `).join('');
+    }
+
+    function dismissSos(sosId) {
+      const el = document.getElementById('sos-' + sosId);
+      if (el) el.remove();
+    }
+
+    // ─── Live Sessions ───
+    let activeSpectator = null;
+
+    function renderLiveSessions(state) {
+      const sessions = state?.live_sessions || [];
+      const divider = document.getElementById('sessions-divider');
+      const container = document.getElementById('live-sessions');
+      if (!divider || !container) return;
+      if (sessions.length === 0) { divider.style.display = 'none'; container.innerHTML = ''; return; }
+      divider.style.display = '';
+      container.innerHTML = sessions.map(s => `
+        <div class="session-item" onclick="openSpectator('${esc(s.userId)}', '${esc(s.username)}')">
+          <div class="live-dot"></div>
+          <span style="color:var(--peach);font-weight:600;">${esc(s.username)}</span>
+          <span style="color:var(--text-dim);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">
+            ${s.lastEvent ? esc(s.lastEvent.summary).slice(0, 40) : 'streaming...'}
+          </span>
+        </div>
+      `).join('');
+    }
+
+    function openSpectator(userId, username) {
+      activeSpectator = { userId, username };
+      document.getElementById('squad-content').style.display = 'none';
+      const view = document.getElementById('spectator-view');
+      view.style.display = 'flex';
+      document.getElementById('spectator-name').textContent = username;
+      document.getElementById('spectator-feed').innerHTML = '<div style="color:var(--text-dim);font-style:italic;padding:4px;">connecting to session...</div>';
+      // Tell watcher we want to spectate this user
+      if (window.squads?.saveSetting) window.squads.saveSetting('spectating_user', userId);
+    }
+
+    function closeSpectator() {
+      activeSpectator = null;
+      document.getElementById('spectator-view').style.display = 'none';
+      document.getElementById('squad-content').style.display = '';
+      if (window.squads?.saveSetting) window.squads.saveSetting('spectating_user', null);
+    }
+
+    function renderSpectatorFeed(state) {
+      if (!activeSpectator) return;
+      const spec = state?.spectating;
+      if (!spec || spec.userId !== activeSpectator.userId) return;
+      const feed = document.getElementById('spectator-feed');
+      if (!feed) return;
+      const wasAtBottom = feed.scrollHeight - feed.scrollTop - feed.clientHeight < 30;
+      feed.innerHTML = spec.events.slice(-50).map(e => {
+        let cls = 'spec-response';
+        let prefix = '';
+        if (e.type === 'prompt') { cls = 'spec-prompt'; prefix = '> '; }
+        else if (e.type === 'tool_use') { cls = 'spec-tool'; prefix = '🔧 '; }
+        else if (e.type === 'thinking') { cls = 'spec-thinking'; prefix = '💭 '; }
+        else if (e.type === 'status') { cls = 'spec-tool'; prefix = ''; }
+        return `<div class="spec-event ${cls}">${prefix}${esc(e.summary)}</div>`;
+      }).join('');
+      if (wasAtBottom) feed.scrollTop = feed.scrollHeight;
+    }
+
     // ─── Emote system ───
     const EMOTE_CATALOG = {
       wave:    { sprite: 'idle_happy',       frames: 6, fps: 3, icon: '\u{1F44B}', label: 'Wave' },
@@ -1544,7 +1728,7 @@
     function quickEmote(friendId, btnEl) {
       // Remove existing quick picker if any
       const existing = document.getElementById('quick-emote-picker');
-      if (existing) { existing.remove(); quickEmoteTarget = null; }
+      if (existing) { existing.remove(); overQuickPicker = false; quickEmoteTarget = null; }
       if (quickEmoteTarget === friendId) { quickEmoteTarget = null; return; }
       quickEmoteTarget = friendId;
       const picker = document.createElement('div');
@@ -1556,14 +1740,20 @@
       picker.innerHTML = Object.entries(EMOTE_CATALOG).map(([name, e]) =>
         `<button class="emote-btn" onclick="event.stopPropagation(); sendQuickEmote('${friendId}','${name}')" title="${e.label}">${e.icon}</button>`
       ).join('');
+      // Track hover so the overlay stays interactive while using the picker
+      picker.addEventListener('mouseenter', () => { overQuickPicker = true; enterUI(); });
+      picker.addEventListener('mouseleave', () => { overQuickPicker = false; leaveUI(); });
       document.body.appendChild(picker);
-      // Auto-close after 5s
-      setTimeout(() => { if (picker.parentNode) picker.remove(); quickEmoteTarget = null; }, 5000);
+      // Keep overlay interactive while picker is open
+      overQuickPicker = true;
+      // Auto-close after 8s
+      setTimeout(() => { if (picker.parentNode) { picker.remove(); overQuickPicker = false; quickEmoteTarget = null; leaveUI(); } }, 8000);
     }
 
     async function sendQuickEmote(friendId, emoteName) {
       const picker = document.getElementById('quick-emote-picker');
       if (picker) picker.remove();
+      overQuickPicker = false;
       quickEmoteTarget = null;
       await window.squads.sendFriendEmote(friendId, emoteName);
       showToast(`Sent ${EMOTE_CATALOG[emoteName]?.label || emoteName}!`);
@@ -1582,6 +1772,10 @@
       renderSquadTab(state);
       renderGitHub(currentState);
       renderBorderPicker(currentState);
+      renderShipFeed(state);
+      renderSosAlerts(state);
+      renderLiveSessions(state);
+      renderSpectatorFeed(state);
       if (activeDm) renderDmMessages();
       checkIncomingEmotes(state);
     });

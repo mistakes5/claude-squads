@@ -258,7 +258,7 @@ export async function sendEmote(
     throw new Error(`Not in room "${roomSlug}". Join first.`);
   }
 
-  const socket = getSocket();
+  const socket = await getSocket();
   socket.emit("send-emote", {
     slug: roomSlug,
     emote: emoteName,
@@ -282,7 +282,7 @@ export async function testEmote(emoteName: string): Promise<string> {
     throw new Error(`Unknown emote "${emoteName}". Available: ${available}`);
   }
 
-  const socket = getSocket();
+  const socket = await getSocket();
   // Send to self via friend-emote — server emits to user:${userId}
   // which the TUI socket also listens on
   socket.emit("send-friend-emote", {

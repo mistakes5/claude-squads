@@ -60,5 +60,10 @@ if room:
 else:
     parts.append('\033[38;2;107;101;96msquads\033[0m')
 
+# Squad message (ephemeral, from a squad member)
+squad_msg = state.get('squad_message')
+if squad_msg and squad_msg.get('message'):
+    parts.append(f'\033[38;2;222;115;86m[{squad_msg["username"]}: {squad_msg["message"]}]\033[0m')
+
 print(' '.join(parts))
 " 2>/dev/null || echo -e "${DIM}✦ squads${RESET}"

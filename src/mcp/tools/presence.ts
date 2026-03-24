@@ -5,8 +5,8 @@ export async function trackPresence(
   roomSlug: string,
   status: string = "online"
 ): Promise<void> {
-  joinRoom(roomSlug);
-  const socket = getSocket();
+  await joinRoom(roomSlug);
+  const socket = await getSocket();
   socket.emit("set-status", { slug: roomSlug, status });
 }
 
@@ -15,7 +15,7 @@ export async function updateStatus(
   status: string,
   currentFile?: string
 ): Promise<void> {
-  const socket = getSocket();
+  const socket = await getSocket();
   socket.emit("set-status", {
     slug: roomSlug,
     status,

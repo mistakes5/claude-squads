@@ -37,6 +37,12 @@ export function clearToken() {
   }
 }
 
+/** Returns true if the access token expires within the given buffer (default 5 min). */
+export function isTokenExpiringSoon(token: StoredToken, bufferSecs = 300): boolean {
+  if (!token.expires_at) return false;
+  return Date.now() / 1000 >= token.expires_at - bufferSecs;
+}
+
 export function loadSettings(): SquadsSettings {
   const defaults: SquadsSettings = {
     overlay_mode: "toggle",

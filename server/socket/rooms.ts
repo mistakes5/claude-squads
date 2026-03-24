@@ -108,4 +108,75 @@ export function registerRoomHandlers(io: SocketServer, socket: Socket) {
       callback({ slug, members: getRoomPresenceList(slug) });
     }
   });
+
+  // ─── Ship Feed ───
+  socket.on("ship", ({ slug, commitMessage, commitHash, projectName, isManual }: {
+    slug: string; commitMessage: string; commitHash?: string; projectName?: string; isManual?: boolean;
+  }) => {
+    const payload = {
+      username: user.username,
+      userId: user.id,
+      commitMessage,
+      commitHash: commitHash || null,
+      projectName: projectName || null,
+      isManual: isManual ?? false,
+      slug,
+      timestamp: new Date().toISOString(),
+    };
+    io.to(`room:${slug}`).emit("ship", payload);
+    // Auto-fire ship emote to celebrate
+    io.to(`room:${slug}`).emit("emote", {
+      username: user.username,
+      userId: user.id,
+      emote: "ship",
+      slug,
+    });
+  });
+
+  // ─── SOS Ping ───
+  socket.on("sos-ping", ({ slug, error, currentFile, description, gitBranch }: {
+    slug: string; error?: string; currentFile?: string; description: string; gitBranch?: string;
+  }) => {
+    const sosId = `sos-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const payload = {
+      username: user.username,
+      userId: user.id,
+      error: error || null,
+      currentFile: currentFile || null,
+      description,
+      gitBranch: gitBranch || null,
+      slug,
+      timestamp: new Date().toISOString(),
+      sosId,
+    };
+    // Broadcast to room
+    io.to(`room:${slug}`).emit("sos-ping", payload);
+    // Also send to all sockets in lobby (friends will pick it up)
+    io.to("lobby").emit("sos-ping", payload);
+  });
+
+  // ─── Squad Status Line Message ───
+  socket.on("squad-message", ({ slug, message }: { slug: string; message: string }) => {
+    io.to(`room:${slug}`).emit("squad-message", {
+      username: user.username,
+      userId: user.id,
+      message: (message || "").slice(0, 50),
+      slug,
+      timestamp: new Date().toISOString(),
+    });
+  });
+
+  // ─── Session Spectating Data Relay ───
+  socket.on("session-data", ({ slug, events }: {
+    slug: string;
+    events: Array<{ type: string; summary: string; toolName?: string; timestamp: string }>;
+  }) => {
+    io.to(`room:${slug}`).emit("session-data", {
+      username: user.username,
+      userId: user.id,
+      slug,
+      events,
+      timestamp: new Date().toISOString(),
+    });
+  });
 }

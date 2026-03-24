@@ -80,8 +80,8 @@ export interface SquadsConfig {
 
 export interface StoredToken {
   access_token: string;
-  refresh_token?: string; // Legacy — not used with JWT auth
-  expires_at?: number;     // Legacy — JWT expiry is in the token itself
+  refresh_token: string;
+  expires_at: number; // Unix timestamp (seconds)
   user: {
     id: string;
     github_username: string;
